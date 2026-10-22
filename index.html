@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#7a5c8e">
+<title>MeguMiru（メグミル）</title>
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
+<link href="style.css?v=1" rel="stylesheet">
+</head>
+<body>
+
+<div id="mapWrap">
+  <div id="map"></div>
+  <div id="topBar">
+    <div id="chips"></div>
+    <div class="pills">
+      <button id="recPill" type="button">● 位置を探しています…</button>
+      <div id="loadPill" hidden></div>
+    </div>
+  </div>
+  <div id="zoomHint" hidden>地図を近づけると、その都県の駅や史跡が出てきます</div>
+  <div id="mapMsg" hidden></div>
+  <div id="mapBtns"><button id="mFollow" type="button" title="現在地に戻る">◎</button></div>
+</div>
+
+<section class="panel" id="p-today" hidden>
+  <h2>✨ 今日</h2>
+  <div id="todaySum" class="card"></div>
+  <div id="todayList"></div>
+</section>
+
+<section class="panel" id="p-zukan" hidden>
+  <h2>📖 図鑑</h2>
+  <div id="zkTabs"></div>
+  <div class="zkCtl">
+    <select id="zkPref"></select>
+    <select id="zkState">
+      <option value="all">すべて</option>
+      <option value="done">行った</option>
+      <option value="yet">まだ</option>
+    </select>
+  </div>
+  <p id="zkStat"></p>
+  <div id="zkList"></div>
+</section>
+
+<section class="panel" id="p-plan" hidden>
+  <h2>📅 おでかけ計画</h2>
+  <div class="card">
+    <p class="big">準備中です</p>
+    <p class="note">次の段階で、地図に立てる「行き先ピン」と、フリーマーケットの予定表がここに入ります。</p>
+  </div>
+</section>
+
+<section class="panel" id="p-set" hidden>
+  <h2>⚙️ 設定</h2>
+  <div class="card">
+    <label class="sw"><span>記録する<small>アプリを開いている間、位置から自動で記録します</small></span><input type="checkbox" id="setRec"></label>
+    <label class="sw" id="setWakeRow"><span>画面を消さない<small>記録中だけ。電池を多く使います</small></span><input type="checkbox" id="setWake"></label>
+  </div>
+  <h3>都県のデータ</h3>
+  <p class="note">地図で近づくと自動で読み込みます。90日たつと取り直します。</p>
+  <div id="prefList"></div>
+  <h3>記録のバックアップ</h3>
+  <div class="card">
+    <p id="recCount"></p>
+    <p class="note">記録はこのスマホのブラウザの中だけにあります。ときどき書き出して保存してください。</p>
+    <div class="btnRow">
+      <button class="btn primary" id="btnExport" type="button">書き出す</button>
+      <button class="btn" id="btnImport" type="button">読み込む</button>
+      <input type="file" id="fileImport" accept="application/json,.json" hidden>
+    </div>
+  </div>
+  <div class="btnRow">
+    <button class="btn" id="btnHelp" type="button">使い方を見る</button>
+    <button class="btn danger" id="btnClear" type="button">記録を全部消す</button>
+  </div>
+  <div class="credit">
+    <p>地図：© Mapbox © OpenStreetMap contributors</p>
+    <p>駅・道の駅・ミュージアム・史跡：© OpenStreetMap contributors（ODbL）</p>
+    <p>市区町村の境界：「国土数値情報（行政区域データ）」（国土交通省）をスマートニュース メディア研究所が簡素化したものを加工して作成（2021年1月時点）</p>
+    <p id="verLine"></p>
+    <p><a id="seriesTop" href="#" hidden>シリーズのTOPへ</a></p>
+  </div>
+</section>
+
+<nav id="tabbar">
+  <button data-tab="map" type="button"><span>🗺</span>地図</button>
+  <button data-tab="today" type="button"><span>✨</span>今日</button>
+  <button data-tab="zukan" type="button"><span>📖</span>図鑑</button>
+  <button data-tab="plan" type="button"><span>📅</span>計画</button>
+  <button data-tab="set" type="button"><span>⚙️</span>設定</button>
+</nav>
+
+<div id="sheet" hidden>
+  <div class="sheetBox">
+    <button id="sheetClose" type="button" aria-label="閉じる">×</button>
+    <div id="sheetBody"></div>
+  </div>
+</div>
+
+<div id="intro" hidden>
+  <div class="introBox">
+    <div id="introBody"></div>
+    <div class="btnRow">
+      <button class="btn" id="introSkip" type="button">とばす</button>
+      <button class="btn primary" id="introNext" type="button">次へ</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+<script src="config.js"></script>
+<script src="js/base.js?v=1"></script>
+<script src="js/data.js?v=1"></script>
+<script src="js/rec.js?v=1"></script>
+<script src="js/map.js?v=1"></script>
+<script src="js/zukan.js?v=1"></script>
+<script src="js/ui.js?v=1"></script>
+<script src="js/help.js?v=1"></script>
+<script src="js/main.js?v=1"></script>
+</body>
+</html>
