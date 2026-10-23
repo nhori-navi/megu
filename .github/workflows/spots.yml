@@ -15,14 +15,32 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: 道具（osmium）を入れる
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq osmium-tool
+      - name: 関東と中部の地図データをダウンロードする（OpenStreetMap・Geofabrik）
+        run: |
+          mkdir -p tmp
+          for r in kanto chubu; do
+            curl -fsSL --retry 5 --retry-delay 20 -o tmp/$r.osm.pbf https://download.geofabrik.de/asia/japan/$r-latest.osm.pbf
+            ls -lh tmp/$r.osm.pbf
+          done
+      - name: 駅・道の駅・ミュージアム・史跡だけを抜き出す
+        run: |
+          for r in kanto chubu; do
+            osmium tags-filter tmp/$r.osm.pbf n/railway=station,halt nwr/highway=rest_area,services nwr/tourism=museum nwr/historic=castle,archaeological_site,tomb -o tmp/$r-f.osm.pbf --overwrite
+            osmium export tmp/$r-f.osm.pbf -f geojsonseq -a type,id -o tmp/$r.geojsonseq --overwrite
+            wc -l tmp/$r.geojsonseq
+          done
       - name: 10都県のデータを作る
-        run: node tools/build-spots.mjs
+        run: node tools/build-spots.mjs tmp/kanto.geojsonseq tmp/chubu.geojsonseq
       - name: できた分を保存する（一部だめでも、できた分は保存）
         if: always()
         run: |
