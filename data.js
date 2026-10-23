@@ -1,4 +1,4 @@
-// data.js：市区町村の境界と、都県ごとの場所データ（MeguMiru 版2）
+// data.js：市区町村の境界と、都県ごとの場所データ（MeguMiru 版6）
 
 // Overpass（OpenStreetMap のデータを取り出す窓口）。上から順に頼む
 const OVP_SERVERS = [
@@ -7,8 +7,9 @@ const OVP_SERVERS = [
   ['kumi', 'https://overpass.kumi.systems/api/interpreter']
 ];
 const OVP_LIMIT = 70000;       // 1か所あたりの待ち時間（ミリ秒）
-const PREF_DAYS = 90;          // 都県のデータを取り直すまでの日数
+const PREF_DAYS = 30;          // 都県のデータを取り直すまでの日数（用意したファイルは毎月作り直す）
 const PREF_DV = 2;             // 保存データの形の番号（版1で保存した分は取り直す）
+const DATA_REV = 3;            // 振り分け方の番号（版6で 3：城跡から御所・宮邸などを外し、遺跡の城跡を拾う）。古いファイルは1日おきに取り直しを試す
 const PREF_RETRY_MIN = 3;      // 失敗したら、自動で頼み直すまでの分
 
 let CITY = [];                 // [{c, p, n, g, bb}]  c=コード, p=都県名, n=名前, g=境界, bb=囲む四角
@@ -24,7 +25,10 @@ const GSZ = 0.01;
 async function loadCity() {
   const res = await fetch('data/city.json?v=1');
   if (!res.ok) throw new Error('市区町村のデータを読めませんでした');
-  const js = await res.json();
+  initCity(await res.json());
+}
+
+function initCity(js) {
   CITY = js.list;
   for (const c of CITY) {
     let w = 999, s = 999, e = -999, n = -999;
@@ -98,8 +102,22 @@ function classify(tags) {
   const tum = tags.site_type === 'tumulus' || tags.archaeological_site === 'tumulus' || tags.tomb === 'tumulus'
     || (tags.historic && /古墳|号墳/.test(name));
   if (tum) return ['hi', '古墳'];
-  if (tags.historic === 'castle') return ['hi', '城跡'];
+  if (tags.historic === 'castle') {
+    // 皇居・御所・宮邸・迎賓館などは「城」として登録されていても外す
+    if (['palace', 'manor', 'stately'].includes(tags.castle_type) || NOT_CASTLE.test(name)) return null;
+    return ['hi', '城跡'];
+  }
+  // 遺跡として登録されている城跡（例：滝山城跡）
+  if (tags.historic === 'archaeological_site'
+      && (tags.site_type === 'fortification' || tags.archaeological_site === 'fortification' || /城(跡|址)$|城$|砦(跡|址)?$|陣屋(跡|址)?$/.test(name))
+      && /城|砦|陣屋|館/.test(name)) return ['hi', '城跡'];
   return null;
+}
+const NOT_CASTLE = /宮邸|宮東邸|親王邸|御所|御用邸|御用地|迎賓館|皇居|宮殿|游心亭|皇族邸|花蔭亭/;
+
+// 古い振り分け方のファイルに残っている御所・宮邸などを、読み込むときにも外す
+function cleanList(list) {
+  return list.filter(s => !(s.sh === 'hi' && s.sub === '城跡' && NOT_CASTLE.test(s.n)));
 }
 
 function stationName(n) { return /駅$/.test(n) ? n : n + '駅'; }
@@ -116,6 +134,8 @@ function parseOsm(js, pc) {
     const y = el.lat != null ? el.lat : el.center && el.center.lat;
     if (x == null || y == null) continue;
     const [sh, sub] = k;
+    const p = pc || prefOfPoint(x, y);
+    if (!p) continue;                 // 10都県の外
     const n = sh === 'st' ? stationName(tags.name) : tags.name;
     const mergeM = sh === 'st' ? 400 : 300;
     const key = sh + '|' + n;
@@ -123,7 +143,7 @@ function parseOsm(js, pc) {
     if (same) { if (!same.w && tags.wikipedia) same.w = tags.wikipedia; continue; }
     const s = {
       id: el.type[0] + el.id, sh, sub, n,
-      x: Math.round(x * 1e5) / 1e5, y: Math.round(y * 1e5) / 1e5, p: pc
+      x: Math.round(x * 1e5) / 1e5, y: Math.round(y * 1e5) / 1e5, p
     };
     if (tags.wikipedia) s.w = tags.wikipedia;
     out.push(s);
@@ -133,24 +153,75 @@ function parseOsm(js, pc) {
   return out;
 }
 
-// 版2：名前の文字で探すのは、種類で絞ったあとだけにする（都内の名前の付いたもの全部から探すと重すぎて時間切れになる）
-// 出力は「out center」（点は位置そのもの、線や面は中心の位置が必ず付く）
-function ovpQuery(pc) {
-  return `[out:json][timeout:60];
-area["ISO3166-2"="JP-${pc}"]["admin_level"="4"]->.a;
+// 版4：都県の境界（area）で絞ると重すぎる（東京都は小笠原まで含む）ので、約50km四方のマスごとに問い合わせる
+// どの都県のものかは、手元の市区町村の境界で決める。名前の文字で探すのは種類で絞ったあとだけ
+const TILE = 0.5;
+function ovpTileQuery(t, timeout) {
+  const [s, w, n, e] = t;
+  return `[out:json][timeout:${timeout || 50}][bbox:${s},${w},${n},${e}];
 (
-  node["railway"="station"]["name"](area.a);
-  node["railway"="halt"]["name"](area.a);
-  nwr["highway"="rest_area"]["name"~"道の駅"](area.a);
-  nwr["highway"="services"]["name"~"道の駅"](area.a);
-  nwr["tourism"="museum"]["name"](area.a);
-  nwr["historic"="castle"]["name"](area.a);
-  nwr["historic"="archaeological_site"]["name"~"古墳|号墳"](area.a);
-  nwr["historic"="archaeological_site"]["site_type"="tumulus"]["name"](area.a);
-  nwr["historic"="tomb"]["name"~"古墳|号墳"](area.a);
-  nwr["historic"="tomb"]["tomb"="tumulus"]["name"](area.a);
+  node["railway"="station"]["name"];
+  node["railway"="halt"]["name"];
+  nwr["highway"="rest_area"]["name"~"道の駅"];
+  nwr["highway"="services"]["name"~"道の駅"];
+  nwr["tourism"="museum"]["name"];
+  nwr["historic"="castle"]["name"];
+  nwr["historic"="archaeological_site"]["name"~"古墳|号墳"];
+  nwr["historic"="archaeological_site"]["site_type"="tumulus"]["name"];
+  nwr["historic"="tomb"]["name"~"古墳|号墳"];
+  nwr["historic"="tomb"]["tomb"="tumulus"]["name"];
 );
 out center;`;
+}
+
+// 位置からその都県（10都県の外なら null）。境界は簡素化してあるので、海沿いで外れたら約500m まわりも見る
+function prefOfPoint(x, y) {
+  let c = cityAt(x, y);
+  if (!c) {
+    const d = 0.005;
+    for (const [dx, dy] of [[d, 0], [-d, 0], [0, d], [0, -d], [d, d], [-d, d], [d, -d], [-d, -d]]) {
+      c = cityAt(x + dx, y + dy);
+      if (c) break;
+    }
+  }
+  return c ? c.c.slice(0, 2) : null;
+}
+
+// その都県にかかるマスの一覧 [南, 西, 北, 東]
+function prefTiles(pcs) {
+  const want = new Set(pcs);
+  const cities = CITY.filter(c => want.has(c.c.slice(0, 2)));
+  const keys = new Set();
+  const key = (x, y) => Math.floor(x / TILE) + ',' + Math.floor(y / TILE);
+  // 境界の頂点があるマス
+  for (const c of cities) for (const poly of c.g) for (const [x, y] of poly[0]) keys.add(key(x, y));
+  // 頂点がなくても中に入っているマス（マスの中を5×5点で調べる）
+  let w = 999, s = 999, e = -999, n = -999;
+  for (const c of cities) { w = Math.min(w, c.bb[0]); s = Math.min(s, c.bb[1]); e = Math.max(e, c.bb[2]); n = Math.max(n, c.bb[3]); }
+  for (let ix = Math.floor(w / TILE); ix <= Math.floor(e / TILE); ix++) for (let iy = Math.floor(s / TILE); iy <= Math.floor(n / TILE); iy++) {
+    const k = ix + ',' + iy;
+    if (keys.has(k)) continue;
+    outer: for (let a = 0; a < 5; a++) for (let b = 0; b < 5; b++) {
+      const x = (ix + (a + 0.5) / 5) * TILE, y = (iy + (b + 0.5) / 5) * TILE;
+      for (const c of cities) {
+        if (x < c.bb[0] || x > c.bb[2] || y < c.bb[1] || y > c.bb[3]) continue;
+        if (c.g.some(p => inPoly(x, y, p))) { keys.add(k); break outer; }
+      }
+    }
+  }
+  return [...keys].map(k => { const [ix, iy] = k.split(',').map(Number); return [iy * TILE, ix * TILE, (iy + 1) * TILE, (ix + 1) * TILE]; })
+    .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+}
+
+// 何回かに分けて受け取った答えを1つにまとめる（同じものは1つに）
+function mergeElements(parts) {
+  const seen = new Set(), els = [];
+  for (const js of parts) for (const el of (js.elements || [])) {
+    const k = el.type + el.id;
+    if (seen.has(k)) continue;
+    seen.add(k); els.push(el);
+  }
+  return { elements: els };
 }
 
 async function ovpFetch(q, onStep) {
@@ -227,8 +298,11 @@ async function restorePrefs() {
       const v = await DB.get('pref:' + pc);
       if (v && v.list && v.v !== PREF_DV) { await DB.del('pref:' + pc); continue; }  // 古い形は消して取り直す
       if (v && v.list) {
-        PREF_META[pc] = { t: v.t, ft: v.ft || v.t, n: v.list.length, src: v.src || 'live' };
-        for (const s of v.list) SPOTS.set(s.id, s);
+        const list = cleanList(v.list);
+        // 古い振り分け方のデータは使いながら、次に必要になったときに取り直す
+        const ft = (v.fr || 1) < DATA_REV ? 0 : (v.ft || v.t);
+        PREF_META[pc] = { t: v.t, ft, n: list.length, src: v.src || 'live', fr: v.fr || 1 };
+        for (const s of list) SPOTS.set(s.id, s);
       }
     } catch (e) { /* 読めなければ取り直す */ }
   }
@@ -274,20 +348,24 @@ async function runPrefQueue() {
   prefBusy = pc;
   onPrefStatus(pc, 'loading', '用意したデータを確認中');
   try {
-    let list, t, src;
+    let list, t, src, fr = DATA_REV;
     const st = await fetchStatic(pc);
     if (st) {
-      list = st.list.map(s => Object.assign({}, s, { p: pc }));
-      t = st.t; src = 'file';
+      list = cleanList(st.list.map(s => Object.assign({}, s, { p: pc })));
+      t = st.t; src = 'file'; fr = st.r || 1;
     } else {
       // 用意したファイルがないときだけ、その場で問い合わせる
-      const js = await ovpFetch(ovpQuery(pc), label => onPrefStatus(pc, 'loading', label + 'に問い合わせ中'));
-      list = parseOsm(js, pc);
+      const tiles = prefTiles([pc]), parts = [];
+      for (let i = 0; i < tiles.length; i++) {
+        parts.push(await ovpFetch(ovpTileQuery(tiles[i]), label => onPrefStatus(pc, 'loading', `${label}に問い合わせ中（${i + 1}／${tiles.length}）`)));
+      }
+      list = parseOsm(mergeElements(parts), null).filter(s => s.p === pc);
       t = Date.now(); src = 'live';
     }
-    const ft = Date.now();
-    await DB.set('pref:' + pc, { v: PREF_DV, t, ft, src, list });
-    PREF_META[pc] = { t, ft, n: list.length, src };
+    // ファイルがまだ古い振り分け方なら、1日たったらもう一度取りに行く
+    const ft = fr < DATA_REV ? Date.now() - (PREF_DAYS - 1) * 86400000 : Date.now();
+    await DB.set('pref:' + pc, { v: PREF_DV, t, ft, src, fr, list });
+    PREF_META[pc] = { t, ft, n: list.length, src, fr };
     delete PREF_FAIL[pc];
     setPrefSpots(pc, list);
     onPrefStatus(pc, 'done');
