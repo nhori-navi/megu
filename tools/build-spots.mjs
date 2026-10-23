@@ -1,4 +1,4 @@
-// build-spots.mjs：GitHub の側で、10都県の場所データ（data/spots-都県コード.json）を作る（版5）
+// build-spots.mjs：GitHub の側で、10都県の場所データ（data/spots-都県コード.json）を作る（版6）
 // 動かし方：GitHub の「Actions」→「場所データを作る」→「Run workflow」（毎月2日の朝にも自動で動く）
 // 版5：Overpass（問い合わせ窓口）が混んでいて取れないので、OpenStreetMap の地域まるごとのファイル（Geofabrik の関東・中部）を
 //      ダウンロードし、osmium で駅などだけを抜き出したもの（GeoJSON の1行1件）を読む。
@@ -11,7 +11,7 @@ const ctx = vm.createContext({ console, setTimeout, clearTimeout });
 for (const f of ['js/base.js', 'js/data.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx, { filename: f });
 ctx.__city = JSON.parse(fs.readFileSync('data/city.json', 'utf8'));
 vm.runInContext('initCity(__city)', ctx);
-const { PREFS, PREF_DV, parseOsm } = vm.runInContext('({ PREFS, PREF_DV, parseOsm })', ctx);
+const { PREFS, PREF_DV, DATA_REV, parseOsm } = vm.runInContext('({ PREFS, PREF_DV, DATA_REV, parseOsm })', ctx);
 
 // GeoJSON の1件を、Overpass と同じ形（点は lat/lon、線や面は center）にする
 function toElement(f) {
@@ -59,7 +59,7 @@ for (const [pc, name] of PREFS) {
   if (!list.length) { failed++; console.log(`✗ ${name}：0件でした（前のファイルがあればそのまま残します）`); continue; }
   const cnt = {};
   for (const s of list) cnt[s.sh] = (cnt[s.sh] || 0) + 1;
-  fs.writeFileSync(`data/spots-${pc}.json`, JSON.stringify({ v: PREF_DV, t: Date.now(), pc, n: list.length, src: 'OpenStreetMap contributors (ODbL)', list }));
+  fs.writeFileSync(`data/spots-${pc}.json`, JSON.stringify({ v: PREF_DV, r: DATA_REV, t: Date.now(), pc, n: list.length, src: 'OpenStreetMap contributors (ODbL)', list }));
   console.log(`○ ${name}：${list.length}件（駅 ${cnt.st || 0}・道の駅 ${cnt.mi || 0}・ミュージアム ${cnt.mu || 0}・史跡 ${cnt.hi || 0}）`);
 }
 if (failed) { console.log(`${failed}都県が保存できませんでした`); process.exitCode = 1; }
