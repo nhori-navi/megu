@@ -153,9 +153,10 @@ area["ISO3166-2"="JP-${pc}"]["admin_level"="4"]->.a;
 out center;`;
 }
 
-async function ovpFetch(q) {
+async function ovpFetch(q, onStep) {
   const errs = [];
   for (const [label, url] of OVP_SERVERS) {
+    if (onStep) onStep(label);
     const ctl = new AbortController();
     const tm = setTimeout(() => ctl.abort(), OVP_LIMIT);
     try {
@@ -226,7 +227,7 @@ async function restorePrefs() {
       const v = await DB.get('pref:' + pc);
       if (v && v.list && v.v !== PREF_DV) { await DB.del('pref:' + pc); continue; }  // 古い形は消して取り直す
       if (v && v.list) {
-        PREF_META[pc] = { t: v.t, n: v.list.length };
+        PREF_META[pc] = { t: v.t, ft: v.ft || v.t, n: v.list.length, src: v.src || 'live' };
         for (const s of v.list) SPOTS.set(s.id, s);
       }
     } catch (e) { /* 読めなければ取り直す */ }
@@ -234,16 +235,35 @@ async function restorePrefs() {
   gridRebuild();
 }
 
+// 版3：GitHub の側で前もって作ったファイル（data/spots-都県コード.json）を先に探す
+// 同じサイト（GitHub Pages）→ GitHub の生ファイル（raw）の順。Pages の更新が遅れても raw で最新が取れる
+const DATA_SRC = ['data/', 'https://raw.githubusercontent.com/nhori-navi/megu/main/data/'];
+async function fetchStatic(pc) {
+  const day = ymd(Date.now()).replace(/-/g, '');
+  for (const base of DATA_SRC) {
+    const ctl = new AbortController();
+    const tm = setTimeout(() => ctl.abort(), 20000);
+    try {
+      const res = await fetch(base + 'spots-' + pc + '.json?d=' + day, { signal: ctl.signal, cache: 'no-cache' });
+      clearTimeout(tm);
+      if (!res.ok) continue;
+      const js = await res.json();
+      if (js && js.v === PREF_DV && Array.isArray(js.list) && js.list.length) return js;
+    } catch (e) { clearTimeout(tm); }
+  }
+  return null;
+}
+
 function prefIsFresh(pc) {
   const m = PREF_META[pc];
-  return m && Date.now() - m.t < PREF_DAYS * 86400000;
+  return m && Date.now() - (m.ft || m.t) < PREF_DAYS * 86400000;
 }
 
 function needPref(pc, force) {
   if (!PREF_NAME[pc]) return;
-  if (!force && (PREF_META[pc] || prefBusy === pc || prefQueue.includes(pc))) return;
-  if (!force && PREF_FAIL[pc] && Date.now() - PREF_FAIL[pc] < PREF_RETRY_MIN * 60000) return; // 失敗したら少しの間は自動で頼まない
   if (prefBusy === pc || prefQueue.includes(pc)) return;
+  if (!force && PREF_META[pc] && prefIsFresh(pc)) return;
+  if (!force && PREF_FAIL[pc] && Date.now() - PREF_FAIL[pc] < PREF_RETRY_MIN * 60000) return; // 失敗したら少しの間は自動で頼まない
   prefQueue.push(pc);
   runPrefQueue();
 }
@@ -252,13 +272,22 @@ async function runPrefQueue() {
   if (prefBusy || !prefQueue.length) return;
   const pc = prefQueue.shift();
   prefBusy = pc;
-  onPrefStatus(pc, 'loading');
+  onPrefStatus(pc, 'loading', '用意したデータを確認中');
   try {
-    const js = await ovpFetch(ovpQuery(pc));
-    const list = parseOsm(js, pc);
-    const t = Date.now();
-    await DB.set('pref:' + pc, { v: PREF_DV, t, list });
-    PREF_META[pc] = { t, n: list.length };
+    let list, t, src;
+    const st = await fetchStatic(pc);
+    if (st) {
+      list = st.list.map(s => Object.assign({}, s, { p: pc }));
+      t = st.t; src = 'file';
+    } else {
+      // 用意したファイルがないときだけ、その場で問い合わせる
+      const js = await ovpFetch(ovpQuery(pc), label => onPrefStatus(pc, 'loading', label + 'に問い合わせ中'));
+      list = parseOsm(js, pc);
+      t = Date.now(); src = 'live';
+    }
+    const ft = Date.now();
+    await DB.set('pref:' + pc, { v: PREF_DV, t, ft, src, list });
+    PREF_META[pc] = { t, ft, n: list.length, src };
     delete PREF_FAIL[pc];
     setPrefSpots(pc, list);
     onPrefStatus(pc, 'done');
