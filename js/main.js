@@ -18,7 +18,8 @@ async function boot() {
     if (curTab === 'zukan') renderZukan();
   };
   onPrefStatus = (pc, s, msg) => {
-    prefState[pc] = { s, msg };
+    const old = prefState[pc];
+    prefState[pc] = { s, msg, since: s === 'loading' && old && old.s === 'loading' ? old.since : Date.now() };
     updLoadPill();
     if (s === 'done') toast(`${PREF_NAME[pc]}のデータを読み込みました（${PREF_META[pc].n}件）`);
     if (s === 'fail') toast(`${PREF_NAME[pc]}のデータを読み込めませんでした：${msg}`, 4500);

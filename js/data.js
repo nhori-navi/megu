@@ -1,13 +1,15 @@
-// data.js：市区町村の境界と、都県ごとの場所データ（MeguMiru 版1）
+// data.js：市区町村の境界と、都県ごとの場所データ（MeguMiru 版3）
 
 // Overpass（OpenStreetMap のデータを取り出す窓口）。上から順に頼む
 const OVP_SERVERS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter'
+  ['本家', 'https://overpass-api.de/api/interpreter'],
+  ['coffee', 'https://overpass.private.coffee/api/interpreter'],
+  ['kumi', 'https://overpass.kumi.systems/api/interpreter']
 ];
-const OVP_LIMIT = 120000;      // 1か所あたりの待ち時間（ミリ秒）
-const PREF_DAYS = 90;          // 都県のデータを取り直すまでの日数
+const OVP_LIMIT = 70000;       // 1か所あたりの待ち時間（ミリ秒）
+const PREF_DAYS = 30;          // 都県のデータを取り直すまでの日数（用意したファイルは毎月作り直す）
+const PREF_DV = 2;             // 保存データの形の番号（版1で保存した分は取り直す）
+const PREF_RETRY_MIN = 3;      // 失敗したら、自動で頼み直すまでの分
 
 let CITY = [];                 // [{c, p, n, g, bb}]  c=コード, p=都県名, n=名前, g=境界, bb=囲む四角
 const CITY_BY = new Map();     // コード → 市区町村
@@ -87,7 +89,7 @@ function classify(tags) {
   if (!name) return null;
   if (tags.disused || tags.abandoned || tags['disused:railway'] || tags['abandoned:railway']) return null;
   if (tags.railway === 'station' || tags.railway === 'halt') return ['st', '駅'];
-  if (/^道の駅/.test(name)) {
+  if (/^道の駅/.test(name) || ((tags.highway === 'rest_area' || tags.highway === 'services') && /道の駅/.test(name))) {
     const bad = ['parking', 'toilets', 'restaurant', 'fast_food', 'cafe', 'vending_machine', 'fuel', 'ice_cream'];
     if (tags.shop || bad.includes(tags.amenity) || tags.tourism === 'information' || tags.building === 'yes' && tags.amenity) return null;
     return ['mi', '道の駅'];
@@ -131,25 +133,30 @@ function parseOsm(js, pc) {
   return out;
 }
 
+// 版2：名前の文字で探すのは、種類で絞ったあとだけにする（都内の名前の付いたもの全部から探すと重すぎて時間切れになる）
+// 出力は「out center」（点は位置そのもの、線や面は中心の位置が必ず付く）
 function ovpQuery(pc) {
-  return `[out:json][timeout:110];
+  return `[out:json][timeout:60];
 area["ISO3166-2"="JP-${pc}"]["admin_level"="4"]->.a;
 (
-  node["railway"~"^(station|halt)$"]["name"](area.a);
-  nwr["name"~"^道の駅"](area.a);
+  node["railway"="station"]["name"](area.a);
+  node["railway"="halt"]["name"](area.a);
+  nwr["highway"="rest_area"]["name"~"道の駅"](area.a);
+  nwr["highway"="services"]["name"~"道の駅"](area.a);
   nwr["tourism"="museum"]["name"](area.a);
   nwr["historic"="castle"]["name"](area.a);
+  nwr["historic"="archaeological_site"]["name"~"古墳|号墳"](area.a);
   nwr["historic"="archaeological_site"]["site_type"="tumulus"]["name"](area.a);
-  nwr["historic"="archaeological_site"]["archaeological_site"="tumulus"]["name"](area.a);
+  nwr["historic"="tomb"]["name"~"古墳|号墳"](area.a);
   nwr["historic"="tomb"]["tomb"="tumulus"]["name"](area.a);
-  nwr["historic"]["name"~"古墳|号墳"](area.a);
 );
-out tags center;`;
+out center;`;
 }
 
-async function ovpFetch(q) {
-  let lastErr = null;
-  for (const url of OVP_SERVERS) {
+async function ovpFetch(q, onStep) {
+  const errs = [];
+  for (const [label, url] of OVP_SERVERS) {
+    if (onStep) onStep(label);
     const ctl = new AbortController();
     const tm = setTimeout(() => ctl.abort(), OVP_LIMIT);
     try {
@@ -160,18 +167,17 @@ async function ovpFetch(q) {
         signal: ctl.signal
       });
       clearTimeout(tm);
-      if (!res.ok) { lastErr = new Error('混み合っています（' + res.status + '）'); continue; }
+      if (!res.ok) { errs.push(label + '：混雑（' + res.status + '）'); continue; }
       const js = await res.json();
-      if (js.remark && /runtime error|timed out/i.test(js.remark) && !(js.elements || []).length) {
-        lastErr = new Error('時間切れでした'); continue;
-      }
+      // 途中で打ち切られた答えは、一部だけが入っていても使わない
+      if (js.remark && /runtime error|timed out|out of memory/i.test(js.remark)) { errs.push(label + '：時間切れ'); continue; }
       return js;
     } catch (e) {
       clearTimeout(tm);
-      lastErr = e;
+      errs.push(label + '：' + (e && e.name === 'AbortError' ? '時間切れ' : jaErr(e)));
     }
   }
-  throw lastErr || new Error('取得できませんでした');
+  throw new Error(errs.join('、') || '取得できませんでした');
 }
 
 // ---------- 場所の索引（近くを速く探すため） ----------
@@ -219,8 +225,9 @@ async function restorePrefs() {
   for (const [pc] of PREFS) {
     try {
       const v = await DB.get('pref:' + pc);
+      if (v && v.list && v.v !== PREF_DV) { await DB.del('pref:' + pc); continue; }  // 古い形は消して取り直す
       if (v && v.list) {
-        PREF_META[pc] = { t: v.t, n: v.list.length };
+        PREF_META[pc] = { t: v.t, ft: v.ft || v.t, n: v.list.length, src: v.src || 'live' };
         for (const s of v.list) SPOTS.set(s.id, s);
       }
     } catch (e) { /* 読めなければ取り直す */ }
@@ -228,16 +235,35 @@ async function restorePrefs() {
   gridRebuild();
 }
 
+// 版3：GitHub の側で前もって作ったファイル（data/spots-都県コード.json）を先に探す
+// 同じサイト（GitHub Pages）→ GitHub の生ファイル（raw）の順。Pages の更新が遅れても raw で最新が取れる
+const DATA_SRC = ['data/', 'https://raw.githubusercontent.com/nhori-navi/megu/main/data/'];
+async function fetchStatic(pc) {
+  const day = ymd(Date.now()).replace(/-/g, '');
+  for (const base of DATA_SRC) {
+    const ctl = new AbortController();
+    const tm = setTimeout(() => ctl.abort(), 20000);
+    try {
+      const res = await fetch(base + 'spots-' + pc + '.json?d=' + day, { signal: ctl.signal, cache: 'no-cache' });
+      clearTimeout(tm);
+      if (!res.ok) continue;
+      const js = await res.json();
+      if (js && js.v === PREF_DV && Array.isArray(js.list) && js.list.length) return js;
+    } catch (e) { clearTimeout(tm); }
+  }
+  return null;
+}
+
 function prefIsFresh(pc) {
   const m = PREF_META[pc];
-  return m && Date.now() - m.t < PREF_DAYS * 86400000;
+  return m && Date.now() - (m.ft || m.t) < PREF_DAYS * 86400000;
 }
 
 function needPref(pc, force) {
   if (!PREF_NAME[pc]) return;
-  if (!force && (PREF_META[pc] || prefBusy === pc || prefQueue.includes(pc))) return;
-  if (!force && PREF_FAIL[pc] && Date.now() - PREF_FAIL[pc] < 10 * 60000) return; // 失敗したら10分は自動で頼まない
   if (prefBusy === pc || prefQueue.includes(pc)) return;
+  if (!force && PREF_META[pc] && prefIsFresh(pc)) return;
+  if (!force && PREF_FAIL[pc] && Date.now() - PREF_FAIL[pc] < PREF_RETRY_MIN * 60000) return; // 失敗したら少しの間は自動で頼まない
   prefQueue.push(pc);
   runPrefQueue();
 }
@@ -246,13 +272,22 @@ async function runPrefQueue() {
   if (prefBusy || !prefQueue.length) return;
   const pc = prefQueue.shift();
   prefBusy = pc;
-  onPrefStatus(pc, 'loading');
+  onPrefStatus(pc, 'loading', '用意したデータを確認中');
   try {
-    const js = await ovpFetch(ovpQuery(pc));
-    const list = parseOsm(js, pc);
-    const t = Date.now();
-    await DB.set('pref:' + pc, { t, list });
-    PREF_META[pc] = { t, n: list.length };
+    let list, t, src;
+    const st = await fetchStatic(pc);
+    if (st) {
+      list = st.list.map(s => Object.assign({}, s, { p: pc }));
+      t = st.t; src = 'file';
+    } else {
+      // 用意したファイルがないときだけ、その場で問い合わせる
+      const js = await ovpFetch(ovpQuery(pc), label => onPrefStatus(pc, 'loading', label + 'に問い合わせ中'));
+      list = parseOsm(js, pc);
+      t = Date.now(); src = 'live';
+    }
+    const ft = Date.now();
+    await DB.set('pref:' + pc, { v: PREF_DV, t, ft, src, list });
+    PREF_META[pc] = { t, ft, n: list.length, src };
     delete PREF_FAIL[pc];
     setPrefSpots(pc, list);
     onPrefStatus(pc, 'done');

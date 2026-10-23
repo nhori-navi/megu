@@ -1,5 +1,5 @@
-// base.js：共通の定数と道具（MeguMiru 版1）
-const APP_VER = 1;
+// base.js：共通の定数と道具（MeguMiru 版3）
+const APP_VER = 3;
 
 // 5つの棚
 const SHELVES = {

@@ -25,11 +25,20 @@ function updRecPill(msg) {
 
 // 都県の読み込み状況
 const prefState = {};
+let pillTimer = null;
 function updLoadPill() {
-  const busy = Object.entries(prefState).filter(([, v]) => v.s === 'loading').map(([k]) => PREF_NAME[k]);
+  const busy = Object.entries(prefState).filter(([, v]) => v.s === 'loading');
   const el = $('loadPill');
-  if (busy.length) { el.textContent = '⏳ ' + busy.join('・') + 'のデータを読み込み中…'; el.hidden = false; }
-  else el.hidden = true;
+  if (busy.length) {
+    const now = Date.now();
+    el.textContent = '⏳ ' + busy.map(([k, v]) => `${PREF_NAME[k]}：${v.msg || '読み込み中'}…${Math.round((now - v.since) / 1000)}秒`).join('／')
+      + (prefQueue.length ? `（あと${prefQueue.length}都県）` : '');
+    el.hidden = false;
+    if (!pillTimer) pillTimer = setInterval(updLoadPill, 1000);
+  } else {
+    el.hidden = true;
+    clearInterval(pillTimer); pillTimer = null;
+  }
 }
 
 // ---------- 今日 ----------
@@ -64,8 +73,8 @@ function renderSettings() {
   $('setWakeRow').hidden = !('wakeLock' in navigator);
   const rows = PREFS.map(([pc, name]) => {
     const m = PREF_META[pc], st = prefState[pc];
-    let s = m ? `${m.n}件・${fmtDate(m.t)}` : '未読み込み';
-    if (st && st.s === 'loading') s = '読み込み中…';
+    let s = m ? `${m.n}件・${fmtDate(m.t)}時点${m.src === 'file' ? '' : '（その場で取得）'}` : '未読み込み';
+    if (st && st.s === 'loading') s = esc(st.msg || '読み込み中') + '…';
     else if (st && st.s === 'fail') s = '失敗：' + esc(st.msg || '') + (m ? `（前の${m.n}件を使用中）` : '');
     const busy = st && st.s === 'loading';
     return `<li class="row"><span class="nm">${name}<small>${s}</small></span><span class="st"><button class="btn sm" data-pc="${pc}" ${busy ? 'disabled' : ''}>${m ? '取り直す' : '読み込む'}</button></span></li>`;
