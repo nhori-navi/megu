@@ -1,4 +1,4 @@
-// data.js：市区町村の境界と、都県ごとの場所データ（MeguMiru 版4）
+// data.js：市区町村の境界と、都県ごとの場所データ（MeguMiru 版6）
 
 // Overpass（OpenStreetMap のデータを取り出す窓口）。上から順に頼む
 const OVP_SERVERS = [
@@ -9,6 +9,7 @@ const OVP_SERVERS = [
 const OVP_LIMIT = 70000;       // 1か所あたりの待ち時間（ミリ秒）
 const PREF_DAYS = 30;          // 都県のデータを取り直すまでの日数（用意したファイルは毎月作り直す）
 const PREF_DV = 2;             // 保存データの形の番号（版1で保存した分は取り直す）
+const DATA_REV = 3;            // 振り分け方の番号（版6で 3：城跡から御所・宮邸などを外し、遺跡の城跡を拾う）。古いファイルは1日おきに取り直しを試す
 const PREF_RETRY_MIN = 3;      // 失敗したら、自動で頼み直すまでの分
 
 let CITY = [];                 // [{c, p, n, g, bb}]  c=コード, p=都県名, n=名前, g=境界, bb=囲む四角
@@ -101,8 +102,22 @@ function classify(tags) {
   const tum = tags.site_type === 'tumulus' || tags.archaeological_site === 'tumulus' || tags.tomb === 'tumulus'
     || (tags.historic && /古墳|号墳/.test(name));
   if (tum) return ['hi', '古墳'];
-  if (tags.historic === 'castle') return ['hi', '城跡'];
+  if (tags.historic === 'castle') {
+    // 皇居・御所・宮邸・迎賓館などは「城」として登録されていても外す
+    if (['palace', 'manor', 'stately'].includes(tags.castle_type) || NOT_CASTLE.test(name)) return null;
+    return ['hi', '城跡'];
+  }
+  // 遺跡として登録されている城跡（例：滝山城跡）
+  if (tags.historic === 'archaeological_site'
+      && (tags.site_type === 'fortification' || tags.archaeological_site === 'fortification' || /城(跡|址)$|城$|砦(跡|址)?$|陣屋(跡|址)?$/.test(name))
+      && /城|砦|陣屋|館/.test(name)) return ['hi', '城跡'];
   return null;
+}
+const NOT_CASTLE = /宮邸|宮東邸|親王邸|御所|御用邸|御用地|迎賓館|皇居|宮殿|游心亭|皇族邸|花蔭亭/;
+
+// 古い振り分け方のファイルに残っている御所・宮邸などを、読み込むときにも外す
+function cleanList(list) {
+  return list.filter(s => !(s.sh === 'hi' && s.sub === '城跡' && NOT_CASTLE.test(s.n)));
 }
 
 function stationName(n) { return /駅$/.test(n) ? n : n + '駅'; }
@@ -283,8 +298,11 @@ async function restorePrefs() {
       const v = await DB.get('pref:' + pc);
       if (v && v.list && v.v !== PREF_DV) { await DB.del('pref:' + pc); continue; }  // 古い形は消して取り直す
       if (v && v.list) {
-        PREF_META[pc] = { t: v.t, ft: v.ft || v.t, n: v.list.length, src: v.src || 'live' };
-        for (const s of v.list) SPOTS.set(s.id, s);
+        const list = cleanList(v.list);
+        // 古い振り分け方のデータは使いながら、次に必要になったときに取り直す
+        const ft = (v.fr || 1) < DATA_REV ? 0 : (v.ft || v.t);
+        PREF_META[pc] = { t: v.t, ft, n: list.length, src: v.src || 'live', fr: v.fr || 1 };
+        for (const s of list) SPOTS.set(s.id, s);
       }
     } catch (e) { /* 読めなければ取り直す */ }
   }
@@ -330,11 +348,11 @@ async function runPrefQueue() {
   prefBusy = pc;
   onPrefStatus(pc, 'loading', '用意したデータを確認中');
   try {
-    let list, t, src;
+    let list, t, src, fr = DATA_REV;
     const st = await fetchStatic(pc);
     if (st) {
-      list = st.list.map(s => Object.assign({}, s, { p: pc }));
-      t = st.t; src = 'file';
+      list = cleanList(st.list.map(s => Object.assign({}, s, { p: pc })));
+      t = st.t; src = 'file'; fr = st.r || 1;
     } else {
       // 用意したファイルがないときだけ、その場で問い合わせる
       const tiles = prefTiles([pc]), parts = [];
@@ -344,9 +362,10 @@ async function runPrefQueue() {
       list = parseOsm(mergeElements(parts), null).filter(s => s.p === pc);
       t = Date.now(); src = 'live';
     }
-    const ft = Date.now();
-    await DB.set('pref:' + pc, { v: PREF_DV, t, ft, src, list });
-    PREF_META[pc] = { t, ft, n: list.length, src };
+    // ファイルがまだ古い振り分け方なら、1日たったらもう一度取りに行く
+    const ft = fr < DATA_REV ? Date.now() - (PREF_DAYS - 1) * 86400000 : Date.now();
+    await DB.set('pref:' + pc, { v: PREF_DV, t, ft, src, fr, list });
+    PREF_META[pc] = { t, ft, n: list.length, src, fr };
     delete PREF_FAIL[pc];
     setPrefSpots(pc, list);
     onPrefStatus(pc, 'done');
