@@ -469,33 +469,42 @@ function lineStationsNear(x, y, r) {
   return res.sort((a, b) => a[1] - b[1]);
 }
 
-// 駅 A から駅 B までの、路線の上の駅の並び（同じ路線か、1回の乗り換え）。いちばん駅の数が少ないもの
+// 駅 A から駅 B までの、路線の上の駅の並び（同じ路線か、1回の乗り換え）
+// 版7.1：急行だけの並び（渋谷→池袋のように途中の駅がない）を選ばないよう、道のりがいちばん短いものから15%以内の中で、駅のいちばん多いものを選ぶ
+function pathLen(p) {
+  let d = 0;
+  for (let i = 1; i < p.length; i++) { const a = LINE_ST[p[i - 1]], b = LINE_ST[p[i]]; if (a && b) d += dist(a[1], a[2], b[1], b[2]); }
+  return d;
+}
+function pickPath(cands) {
+  if (!cands.length) return null;
+  const withLen = cands.map(p => [p, pathLen(p)]);
+  const min = Math.min(...withLen.map(c => c[1]));
+  return withLen.filter(c => c[1] <= min * 1.15 + 1).sort((a, b) => b[0].length - a[0].length || a[1] - b[1])[0][0];
+}
 function linePath(A, B) {
   if (A === B) return null;
   const at = id => LINE_AT.get(id) || [];
   const seg = (li, i, j) => { const s = LINES[li].s; return i <= j ? s.slice(i, j + 1) : s.slice(j, i + 1).reverse(); };
-  let best = null;
-  for (const [la, ia] of at(A)) for (const [lb, ib] of at(B)) {
-    if (la === lb) {
-      const p = seg(la, ia, ib);
-      if (!best || p.length < best.length) best = p;
-    }
-  }
-  if (best) return best;
-  // 1回の乗り換え：A の路線と B の路線の両方にある駅 T
+  const same = [];
+  for (const [la, ia] of at(A)) for (const [lb, ib] of at(B)) if (la === lb) same.push(seg(la, ia, ib));
+  // 1回の乗り換え：A の路線と B の路線の両方にある駅 T（同じ路線で行けるときも、乗り換えのほうがずっと近いことがあるので比べる）
+  const via = [];
   for (const [la, ia] of at(A)) {
     const sa = LINES[la].s;
     for (const [lb, ib] of at(B)) {
+      if (la === lb) continue;
       const sb = LINES[lb].s;
       for (let it = 0; it < sa.length; it++) {
         const jt = sb.indexOf(sa[it]);
-        if (jt < 0) continue;
-        const p = seg(la, ia, it).concat(seg(lb, jt, ib).slice(1));
-        if (!best || p.length < best.length) best = p;
+        if (jt < 0 || sa[it] === A || sa[it] === B) continue;
+        via.push(seg(la, ia, it).concat(seg(lb, jt, ib).slice(1)));
       }
     }
   }
-  return best;
+  const s1 = pickPath(same), s2 = pickPath(via);
+  if (s1 && s2) return pathLen(s2) < pathLen(s1) * 0.7 ? s2 : s1;   // 乗り換えのほうが3割以上近いときだけ乗り換え
+  return s1 || s2;
 }
 
 // 都県のデータを読み終えるまで待つ（GPX の読み込みで使う）
