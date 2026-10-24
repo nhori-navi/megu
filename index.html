@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#7a5c8e">
 <title>MeguMiru（メグミル）</title>
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
-<link href="style.css?v=1" rel="stylesheet">
+<link href="style.css?v=7" rel="stylesheet">
 </head>
 <body>
 
@@ -22,11 +22,19 @@
   </div>
   <div id="zoomHint" hidden>地図を近づけると、その都県の駅や史跡が出てきます</div>
   <div id="mapMsg" hidden></div>
-  <div id="mapBtns"><button id="mFollow" type="button" title="現在地に戻る">◎</button></div>
+  <div id="mapBtns">
+    <button id="mHere" type="button" title="いまここ（その場で記録）" hidden>📍<span id="mHereN"></span></button>
+    <button id="mFollow" type="button" title="現在地に戻る">◎</button>
+  </div>
 </div>
 
 <section class="panel" id="p-today" hidden>
   <h2>✨ 今日</h2>
+  <div class="dayNav">
+    <button class="btn sm" id="dayPrev" type="button">◀ 前の日</button>
+    <span id="dayLabel"></span>
+    <button class="btn sm" id="dayNext" type="button">次の日 ▶</button>
+  </div>
   <div id="todaySum" class="card"></div>
   <div id="todayList"></div>
 </section>
@@ -63,6 +71,16 @@
   <h3>都県のデータ</h3>
   <p class="note">地図で近づくと自動で読み込みます。90日たつと取り直します。</p>
   <div id="prefList"></div>
+  <h3>OpenTracks などの記録（GPX）</h3>
+  <div class="card">
+    <p class="note">アプリを閉じていた間の記録を、あとから読み込めます。記録した時刻に行ったことになります（同じファイルは二度読みません）。</p>
+    <div class="btnRow">
+      <button class="btn primary" id="btnGpx" type="button">GPX を読み込む</button>
+      <input type="file" id="fileGpx" accept=".gpx,application/gpx+xml,application/xml,text/xml" multiple hidden>
+    </div>
+    <p id="gpxStatus" class="note"></p>
+    <p id="gpxCount" class="note"></p>
+  </div>
   <h3>記録のバックアップ</h3>
   <div class="card">
     <p id="recCount"></p>
@@ -79,7 +97,7 @@
   </div>
   <div class="credit">
     <p>地図：© Mapbox © OpenStreetMap contributors</p>
-    <p>駅・道の駅・ミュージアム・史跡：© OpenStreetMap contributors（ODbL）</p>
+    <p>駅・道の駅・ミュージアム・史跡・路線：© OpenStreetMap contributors（ODbL）</p>
     <p>市区町村の境界：「国土数値情報（行政区域データ）」（国土交通省）をスマートニュース メディア研究所が簡素化したものを加工して作成（2021年1月時点）</p>
     <p id="verLine"></p>
     <p><a id="seriesTop" href="#" hidden>シリーズのTOPへ</a></p>
@@ -115,13 +133,14 @@
 
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
 <script src="config.js"></script>
-<script src="js/base.js?v=6"></script>
-<script src="js/data.js?v=6"></script>
-<script src="js/rec.js?v=1"></script>
-<script src="js/map.js?v=6"></script>
-<script src="js/zukan.js?v=1"></script>
-<script src="js/ui.js?v=3"></script>
+<script src="js/base.js?v=7"></script>
+<script src="js/data.js?v=7"></script>
+<script src="js/rec.js?v=7"></script>
+<script src="js/map.js?v=7"></script>
+<script src="js/zukan.js?v=7"></script>
+<script src="js/gpx.js?v=7"></script>
+<script src="js/ui.js?v=7"></script>
 <script src="js/help.js?v=1"></script>
-<script src="js/main.js?v=3"></script>
+<script src="js/main.js?v=7"></script>
 </body>
 </html>

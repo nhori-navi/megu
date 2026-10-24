@@ -1,4 +1,4 @@
-/* MeguMiru 版1 */
+/* MeguMiru 版7 */
 :root {
   --c: #7a5c8e;          /* くすんだ紫（シリーズ内の MeguMiru の色） */
   --c-soft: #efe9f3;
@@ -140,3 +140,13 @@ a { color: var(--c); }
 @media (min-width: 760px) {
   .panel { padding-left: calc(50% - 340px); padding-right: calc(50% - 340px); }
 }
+
+/* 版7：いまここ・推定 */
+#mapBtns #mHere { position: relative; font-size: 19px; }
+#mHereN { position: absolute; top: -3px; right: -3px; min-width: 17px; height: 17px; border-radius: 9px; background: var(--c); color: #fff;
+  font-size: 11px; line-height: 17px; padding: 0 4px; }
+#mHereN:empty { display: none; }
+.badge.est { background: transparent; color: var(--c); border: 1px dashed var(--c); }
+.tag { display: inline-block; margin-left: 6px; font-size: 12px; color: var(--sub); }
+.dayNav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -4px 0 10px; }
+#dayLabel { font-weight: 600; }
