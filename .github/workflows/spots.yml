@@ -29,22 +29,25 @@ jobs:
         run: |
           mkdir -p tmp
           for r in kanto chubu; do
-            curl -fsSL --retry 5 --retry-delay 20 -o tmp/$r.osm.pbf https://download.geofabrik.de/asia/japan/$r-latest.osm.pbf
+            curl -fSL --retry 5 --retry-delay 20 --progress-bar -o tmp/$r.osm.pbf https://download.geofabrik.de/asia/japan/$r-latest.osm.pbf 2>&1 | tr '\r' '\n' | awk 'NR % 40 == 0'
             ls -lh tmp/$r.osm.pbf
           done
-      - name: 駅・道の駅・ミュージアム・史跡だけを抜き出す
+      - name: 駅・道の駅・ミュージアム・史跡と、鉄道の路線を抜き出す
         run: |
           for r in kanto chubu; do
             osmium tags-filter tmp/$r.osm.pbf n/railway=station,halt nwr/highway=rest_area,services nwr/tourism=museum nwr/historic=castle,archaeological_site,tomb -o tmp/$r-f.osm.pbf --overwrite
             osmium export tmp/$r-f.osm.pbf -f geojsonseq -a type,id -o tmp/$r.geojsonseq --overwrite
-            wc -l tmp/$r.geojsonseq
+            osmium tags-filter tmp/$r.osm.pbf r/route=train,subway,light_rail,monorail,railway -o tmp/$r-r.osm.pbf --overwrite
+            osmium cat tmp/$r-r.osm.pbf -f opl -o tmp/$r-routes.opl --overwrite
+            wc -l tmp/$r.geojsonseq tmp/$r-routes.opl
           done
       - name: 10都県のデータを作る
-        run: node tools/build-spots.mjs tmp/kanto.geojsonseq tmp/chubu.geojsonseq
+        run: node tools/build-spots.mjs tmp/kanto.geojsonseq tmp/chubu.geojsonseq tmp/kanto-routes.opl tmp/chubu-routes.opl
       - name: できた分を保存する（一部だめでも、できた分は保存）
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
           git add data/spots-*.json || true
+          git add data/lines.json || true
           if git diff --cached --quiet; then echo "変更なし"; else git commit -m "場所データを更新" && git push; fi
