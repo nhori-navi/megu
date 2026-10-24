@@ -1,45 +1,49 @@
-// map.js：地図（MeguMiru 版7：近づくと棚ごとの色のマップピン。推定の駅は点線のふち）
+// map.js：地図（MeguMiru 版8.1：まだの所は薄い丸、行った所は塗りつぶしのピン、通過は白抜きのピン、推定の通過は点線の白抜き）
 let map = null;
 let mapReady = false;
 let follow = true;
 let filt = Object.assign({ st: true, city: true, mi: true, mu: true, hi: true }, getLS('filter', {}));
 const LOAD_ZOOM = 9;   // これより近づいたら、画面に入った都県のデータを読み込む
-const PIN_ZOOM = 12;   // これより近づいたらピン、引いているときは小さな丸
 
-// ピンの絵（棚×段階）を描いて地図に登録する。段階 0=まだ（半透明）、1=通過（中くらい）、2=行った（はっきり・影つき）
+// ピンの絵を描いて地図に登録する
+//   pin-棚-in   ：行った（降車・訪問）＝棚の色で塗りつぶし、白い丸に絵柄、影つき
+//   pin-棚-pass ：通過＝白抜き（棚の色のふち）、絵柄
+//   pin-st-passe：推定の通過＝白抜きでふちが点線
 function addPinImages() {
   const R = 2;                       // 細かく描くための倍率
   const W = 34, H = 44;              // 見た目の大きさ（px）
   const kinds = [];
-  for (const k of ['st', 'mi', 'mu', 'hi']) for (const lv of [0, 1, 2]) kinds.push([k, lv, '']);
-  kinds.push(['st', 1, 'e']);        // 推定の通過（点線のふち）
-  for (const [k, lv, ex] of kinds) {
-    const id = 'pin-' + k + '-' + lv + ex;
+  for (const k of ['st', 'mi', 'mu', 'hi']) kinds.push([k, 'in'], [k, 'pass']);
+  kinds.push(['st', 'passe']);
+  for (const [k, kind] of kinds) {
+    const id = 'pin-' + k + '-' + kind;
     if (map.hasImage && map.hasImage(id)) continue;
     const cv = document.createElement('canvas');
     cv.width = W * R; cv.height = H * R;
     const g = cv.getContext('2d');
     g.scale(R, R);
-    g.globalAlpha = lv === 0 ? 0.42 : lv === 1 ? 0.72 : 1;
-    if (lv === 2) { g.shadowColor = 'rgba(0,0,0,0.35)'; g.shadowBlur = 3; g.shadowOffsetY = 1.5; }
+    const col = SHELVES[k].color;
+    const solid = kind === 'in';
+    // 版8.1：白抜き（通過）は、ふちの分だけ大きく見えるので、先の位置はそのままで8割の大きさに縮める
+    if (!solid) { g.translate(W / 2, H - 3); g.scale(0.8, 0.8); g.translate(-W / 2, -(H - 3)); }
+    g.shadowColor = 'rgba(0,0,0,0.35)'; g.shadowBlur = solid ? 3 : 2; g.shadowOffsetY = 1.2;
     // しずく形
     const cx = W / 2, cy = 15, r = 13;
     g.beginPath();
-    g.moveTo(cx, H - 2);
-    g.bezierCurveTo(cx - 3, H - 9, cx - r, cy + 9, cx - r, cy);
+    g.moveTo(cx, H - 3);
+    g.bezierCurveTo(cx - 3, H - 10, cx - r, cy + 9, cx - r, cy);
     g.arc(cx, cy, r, Math.PI, 0);
-    g.bezierCurveTo(cx + r, cy + 9, cx + 3, H - 9, cx, H - 2);
+    g.bezierCurveTo(cx + r, cy + 9, cx + 3, H - 10, cx, H - 3);
     g.closePath();
-    g.fillStyle = SHELVES[k].color;
+    g.fillStyle = solid ? col : '#ffffff';
     g.fill();
     g.shadowColor = 'transparent';
-    g.lineWidth = lv === 2 ? 2.2 : (ex === 'e' ? 1.8 : 1.3);
-    if (ex === 'e') g.setLineDash([3, 2.5]);
-    g.strokeStyle = '#ffffff';
+    if (solid) { g.lineWidth = 2; g.strokeStyle = '#ffffff'; }
+    else { g.lineWidth = 3; g.strokeStyle = col; if (kind === 'passe') g.setLineDash([3.2, 2.4]); }
     g.stroke();
     g.setLineDash([]);
-    // 中の白い丸と絵柄
-    g.beginPath(); g.arc(cx, cy, 9, 0, Math.PI * 2); g.fillStyle = '#ffffff'; g.fill();
+    // 中の白い丸（行った所だけ）と絵柄
+    if (solid) { g.beginPath(); g.arc(cx, cy, 9, 0, Math.PI * 2); g.fillStyle = '#ffffff'; g.fill(); }
     g.font = '11px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText(SHELVES[k].icon, cx, cy + 0.5);
@@ -80,30 +84,34 @@ function setupLayers() {
     paint: { 'line-color': 'rgba(122,92,142,0.45)', 'line-width': 0.7, 'line-emissive-strength': 1 }
   });
   addPinImages();
-  // 引いているときは小さな丸
+  // まだ行っていない所：薄い小さな丸（どの縮尺でも）
   map.addLayer({
-    id: 'spots', type: 'circle', source: 'spots', slot: 'top', maxzoom: PIN_ZOOM,
+    id: 'spots', type: 'circle', source: 'spots', slot: 'top',
     paint: {
-      'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, ['match', ['get', 'v'], 0, 2, 3.5], 12, ['match', ['get', 'v'], 0, 4.5, 6.5]],
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, 2, 12, 4, 16, 6],
       'circle-color': ['match', ['get', 'sh'], 'st', SHELVES.st.color, 'mi', SHELVES.mi.color, 'mu', SHELVES.mu.color, 'hi', SHELVES.hi.color, '#888'],
-      'circle-opacity': ['match', ['get', 'v'], 0, 0.32, 1, 0.7, 1],
-      'circle-stroke-color': '#ffffff',
-      'circle-stroke-width': ['match', ['get', 'v'], 0, 0, 1.6],
+      'circle-opacity': 0.4,
       'circle-emissive-strength': 1
     }
   });
-  // 近づいたらピン（全部出して、行った所を手前に）
+  // まだの所の名前は、かなり近づいたときだけ薄く
   map.addLayer({
-    id: 'spots-pin', type: 'symbol', source: 'spots', slot: 'top', minzoom: PIN_ZOOM,
+    id: 'spots-label', type: 'symbol', source: 'spots', slot: 'top', minzoom: 15,
+    layout: { 'text-field': ['get', 'n'], 'text-size': 10.5, 'text-anchor': 'top', 'text-offset': [0, 0.5], 'text-optional': true },
+    paint: { 'text-color': '#555', 'text-halo-color': '#fff', 'text-halo-width': 1.2, 'text-opacity': 0.7, 'text-emissive-strength': 1 }
+  });
+  // 行った所・通過した所：ピン（行った所を手前に）
+  map.addLayer({
+    id: 'spots-pin', type: 'symbol', source: 'spots', slot: 'top',
     layout: {
-      'icon-image': ['concat', 'pin-', ['get', 'sh'], '-', ['to-string', ['get', 'v']], ['case', ['==', ['get', 'e'], 1], 'e', '']],
+      'icon-image': ['concat', 'pin-', ['get', 'sh'], '-', ['case', ['==', ['get', 'v'], 2], 'in', ['==', ['get', 'e'], 1], 'passe', 'pass']],
       'icon-anchor': 'bottom',
-      'icon-size': ['interpolate', ['linear'], ['zoom'], PIN_ZOOM, 0.8, 16, 1.1],
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 7, 0.5, 12, 0.8, 16, 1.1],
       'icon-allow-overlap': true,
       'icon-ignore-placement': true,
       'symbol-sort-key': ['get', 'v'],
       'symbol-z-order': 'source',
-      'text-field': ['step', ['zoom'], '', 13.5, ['get', 'n']],
+      'text-field': ['step', ['zoom'], '', 13, ['get', 'n']],
       'text-size': 11,
       'text-anchor': 'top',
       'text-offset': [0, 0.2],
@@ -112,7 +120,6 @@ function setupLayers() {
     paint: {
       'icon-emissive-strength': 1,
       'text-color': '#333', 'text-halo-color': '#fff', 'text-halo-width': 1.2,
-      'text-opacity': ['match', ['get', 'v'], 0, 0.6, 1],
       'text-emissive-strength': 1
     }
   });
@@ -175,8 +182,10 @@ function applyFilter() {
   if (!mapReady) return;
   const on = ['st', 'mi', 'mu', 'hi'].filter(k => filt[k]);
   const f = ['in', ['get', 'sh'], ['literal', on]];
-  map.setFilter('spots', f);
-  map.setFilter('spots-pin', f);
+  const yet = ['==', ['get', 'v'], 0];
+  map.setFilter('spots', ['all', f, yet]);
+  map.setFilter('spots-label', ['all', f, yet]);
+  map.setFilter('spots-pin', ['all', f, ['>', ['get', 'v'], 0]]);
   const vis = filt.city ? 'visible' : 'none';
   map.setLayoutProperty('city-fill', 'visibility', vis);
   map.setLayoutProperty('city-line', 'visibility', vis);
@@ -214,7 +223,7 @@ function viewChanged() {
 
 function onMapClick(e) {
   // ピンは押しやすいように、押した所のまわり少し広めに探す
-  const pad = map.getZoom() >= PIN_ZOOM ? 14 : 6;
+  const pad = 12;
   const box = [[e.point.x - pad, e.point.y - pad * 2], [e.point.x + pad, e.point.y + pad / 2]];
   const hit = map.queryRenderedFeatures(box, { layers: ['spots', 'spots-pin'] })
     .sort((a, b) => (b.properties.v || 0) - (a.properties.v || 0));
