@@ -1,4 +1,4 @@
-// map.js：地図（MeguMiru 版6：近づくと棚ごとの色のマップピン）
+// map.js：地図（MeguMiru 版7：近づくと棚ごとの色のマップピン。推定の駅は点線のふち）
 let map = null;
 let mapReady = false;
 let follow = true;
@@ -10,8 +10,11 @@ const PIN_ZOOM = 12;   // これより近づいたらピン、引いていると
 function addPinImages() {
   const R = 2;                       // 細かく描くための倍率
   const W = 34, H = 44;              // 見た目の大きさ（px）
-  for (const k of ['st', 'mi', 'mu', 'hi']) for (const lv of [0, 1, 2]) {
-    const id = 'pin-' + k + '-' + lv;
+  const kinds = [];
+  for (const k of ['st', 'mi', 'mu', 'hi']) for (const lv of [0, 1, 2]) kinds.push([k, lv, '']);
+  kinds.push(['st', 1, 'e']);        // 推定の通過（点線のふち）
+  for (const [k, lv, ex] of kinds) {
+    const id = 'pin-' + k + '-' + lv + ex;
     if (map.hasImage && map.hasImage(id)) continue;
     const cv = document.createElement('canvas');
     cv.width = W * R; cv.height = H * R;
@@ -30,9 +33,11 @@ function addPinImages() {
     g.fillStyle = SHELVES[k].color;
     g.fill();
     g.shadowColor = 'transparent';
-    g.lineWidth = lv === 2 ? 2.2 : 1.3;
+    g.lineWidth = lv === 2 ? 2.2 : (ex === 'e' ? 1.8 : 1.3);
+    if (ex === 'e') g.setLineDash([3, 2.5]);
     g.strokeStyle = '#ffffff';
     g.stroke();
+    g.setLineDash([]);
     // 中の白い丸と絵柄
     g.beginPath(); g.arc(cx, cy, 9, 0, Math.PI * 2); g.fillStyle = '#ffffff'; g.fill();
     g.font = '11px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
@@ -91,7 +96,7 @@ function setupLayers() {
   map.addLayer({
     id: 'spots-pin', type: 'symbol', source: 'spots', slot: 'top', minzoom: PIN_ZOOM,
     layout: {
-      'icon-image': ['concat', 'pin-', ['get', 'sh'], '-', ['to-string', ['get', 'v']]],
+      'icon-image': ['concat', 'pin-', ['get', 'sh'], '-', ['to-string', ['get', 'v']], ['case', ['==', ['get', 'e'], 1], 'e', '']],
       'icon-anchor': 'bottom',
       'icon-size': ['interpolate', ['linear'], ['zoom'], PIN_ZOOM, 0.8, 16, 1.1],
       'icon-allow-overlap': true,
@@ -125,12 +130,13 @@ function spotsGeo() {
   const seen = new Set();
   for (const s of SPOTS.values()) {
     seen.add(s.id);
-    feats.push({ type: 'Feature', properties: { id: s.id, sh: s.sh, n: s.n, v: lvOf(s.id) }, geometry: { type: 'Point', coordinates: [s.x, s.y] } });
+    const r = REC[s.id];
+    feats.push({ type: 'Feature', properties: { id: s.id, sh: s.sh, n: s.n, v: lvOf(s.id), e: r && r.e ? 1 : 0 }, geometry: { type: 'Point', coordinates: [s.x, s.y] } });
   }
   // 都県のデータを読み込んでいなくても、行った場所は出す
   for (const [id, r] of Object.entries(REC)) {
     if (seen.has(id) || r.s.sh === 'city') continue;
-    feats.push({ type: 'Feature', properties: { id, sh: r.s.sh, n: r.s.n, v: r.lv }, geometry: { type: 'Point', coordinates: [r.s.x, r.s.y] } });
+    feats.push({ type: 'Feature', properties: { id, sh: r.s.sh, n: r.s.n, v: r.lv, e: r.e ? 1 : 0 }, geometry: { type: 'Point', coordinates: [r.s.x, r.s.y] } });
   }
   return { type: 'FeatureCollection', features: feats };
 }

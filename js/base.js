@@ -1,5 +1,5 @@
-// base.js：共通の定数と道具（MeguMiru 版6）
-const APP_VER = 6;
+// base.js：共通の定数と道具（MeguMiru 版7）
+const APP_VER = 7;
 
 // 5つの棚
 const SHELVES = {
@@ -30,7 +30,14 @@ const RULE = {
   castle: 200,        // 城跡
   kofun: 80,          // 古墳
   cityPassSpeed: 8,   // 秒速8m（時速約29km）以上で入ったら市区町村は「通過」
-  maxAcc: 150         // 位置の精度がこれより悪いときは判定しない
+  maxAcc: 150,        // 位置の精度がこれより悪いときは判定しない（地下の駅は別）
+  // 版7（A）地下の駅：まわり300m、位置の精度300mまで
+  stU: 300,
+  maxAccU: 300,
+  // 版7（B）途切れた間の推定：1分以上・800m以上離れて、時速9〜150kmの動きなら、両端から500m以内の駅を路線で結ぶ
+  gapMin: 60, gapDist: 800, gapSpdMin: 2.5, gapSpdMax: 42, gapNear: 500,
+  // 版7（C）「いまここ」：最後の位置が10分以内・精度500m以内で、そこから500m以内
+  hereMin: 10, hereAcc: 500, hereR: 500
 };
 
 // 記録の段階

@@ -1,15 +1,23 @@
-// rec.js：位置の記録と「訪れた」の判定（MeguMiru 版1）
+// rec.js：位置の記録と「訪れた」の判定（MeguMiru 版7）
+// 版7：地下の駅は判定をゆるめる（A）／位置が途切れた間に通った駅を路線から推定する（B）／「いまここ」で記録（C）／GPX の読み込みにも使う
 
-let REC = {};      // 場所の番号 → {lv, f, l, n, d, s}  lv=段階, f=初めて, l=最後, n=行った日数, d=最後の日, s=場所の控え
+let REC = {};      // 場所の番号 → {lv, f, l, n, d, ds, s, e, h}
+                   //   lv=段階, f=初めて, l=最後, n=行った日数, d=最後の日, ds=行った日の一覧（yyyymmdd）, s=場所の控え
+                   //   e=1 推定（路線から）, h=1 「いまここ」で記録
 let LOG = [];      // [{t, id, lv, k}]  k: new=初めて / up=段階が上がった / again=別の日にまた
 let recOn = getLS('recon', true);
 let watchId = null;
 let lastFix = null;          // {x, y, acc, t, spd}
 let lastPos = getLS('lastpos', null);  // [経度, 緯度]
-const stay = {};             // 場所の番号 → {ms: とどまった合計, t: 最後に数えた時刻}
 let onRecChanged = () => {};
 let onFix = () => {};
 let wakeLock = null;
+
+// 判定の途中の状態（アプリで記録しているときの分。GPX の読み込みは別に作る）
+function newJudgeCtx(opt) {
+  return Object.assign({ stay: {}, good: null, quiet: false, gpx: false, count: { new: 0, up: 0, again: 0, est: 0 } }, opt || {});
+}
+const liveCtx = newJudgeCtx();
 
 async function loadRec() {
   try {
@@ -33,26 +41,46 @@ function spotSnap(s) {
   return { n: s.n, sh: s.sh, sub: s.sub, x: s.x, y: s.y, p: s.p };
 }
 
+const dayNum = t => +ymd(t).replace(/-/g, '');
+
 // 記録する。返り値は「新しい出来事」（なければ null）
-function mark(id, lv, snap, now) {
-  const today = ymd(now);
+// opt：est＝路線から推定、here＝「いまここ」、ctx＝判定の状態（quiet なら知らせない）
+function mark(id, lv, snap, now, opt) {
+  opt = opt || {};
+  const ctx = opt.ctx || liveCtx;
+  const day = dayNum(now);
   const r = REC[id];
   let ev = null;
   if (!r) {
-    REC[id] = { lv, f: now, l: now, n: 1, d: today, s: snap };
+    REC[id] = { lv, f: now, l: now, n: 1, d: ymd(now), ds: [day], s: snap };
+    if (opt.est) REC[id].e = 1;
+    if (opt.here) REC[id].h = 1;
     ev = 'new';
   } else {
+    if (opt.est) return null;                    // 推定は、まだ記録のない所だけ
+    if (!r.ds) r.ds = r.d ? [dayNum(new Date(r.d + 'T12:00:00').getTime())] : [];
     r.s = snap;
-    if (lv > r.lv) { r.lv = lv; ev = 'up'; }
-    if (r.d !== today) { r.n++; r.d = today; if (!ev) ev = 'again'; }
-    r.l = now;
+    if (lv > r.lv || (lv === r.lv && r.e)) { r.lv = Math.max(lv, r.lv); ev = 'up'; }
+    if (r.e) delete r.e;                         // 本当に通ったら推定ではなくなる
+    if (opt.here) r.h = 1;
+    if (!r.ds.includes(day)) {
+      r.ds.push(day);
+      if (r.ds.length > 400) r.ds = r.ds.slice(-400);
+      r.n = Math.max(r.n + 1, r.ds.length);
+      if (!ev) ev = 'again';
+    }
+    if (now < r.f) r.f = now;                    // 前の日の記録（GPX）を読み込んだとき
+    if (now >= r.l) { r.l = now; r.d = ymd(now); }
   }
   if (ev) {
     LOG.push({ t: now, id, lv: REC[id].lv, k: ev });
     if (LOG.length > 5000) LOG = LOG.slice(-4000);
+    if (ctx.count) { ctx.count[ev]++; if (opt.est && ev === 'new') ctx.count.est++; }
     saveRec();
-    onRecChanged(id, ev);
-    announce(id, ev);
+    if (!ctx.quiet) {
+      onRecChanged(id, ev);
+      announce(id, ev);
+    }
   }
   return ev;
 }
@@ -60,52 +88,85 @@ function mark(id, lv, snap, now) {
 function announce(id, ev) {
   const r = REC[id];
   const sh = SHELVES[r.s.sh];
-  const lvName = LV_NAME[r.s.sh][r.lv];
-  if (ev === 'new') toast(sh.icon + ' はじめて：' + r.s.n + (lvName && r.s.sh !== 'mi' && r.s.sh !== 'mu' && r.s.sh !== 'hi' ? '（' + lvName + '）' : ''), 4000);
+  const lvName = LV_NAME[r.s.sh][r.lv] + (r.e ? '・推定' : '');
+  if (ev === 'new') toast(sh.icon + ' はじめて：' + r.s.n + (lvName && (r.s.sh === 'st' || r.s.sh === 'city') ? '（' + lvName + '）' : ''), 4000);
   else if (ev === 'up') toast(sh.icon + ' ' + r.s.n + '：' + lvName + 'になりました', 3500);
   else if (ev === 'again') toast(sh.icon + ' また来ました：' + r.s.n, 3000);
 }
 
-function stayAdd(id, now) {
-  const st = stay[id] || (stay[id] = { ms: 0, t: now });
-  const dt = Math.min(now - st.t, 60000);   // 間があいた分は最大1分まで数える
+// とどまった時間を足す。アプリでは間があいても1分まで、GPX は止まっている間に点が少ないので2時間まで数える
+function stayAdd(ctx, id, now) {
+  const st = ctx.stay[id] || (ctx.stay[id] = { ms: 0, t: now });
+  const cap = ctx.gpx ? 2 * 3600000 : 60000;
+  const dt = Math.min(now - st.t, cap);
   if (dt > 0) st.ms += dt;
   st.t = now;
   return st.ms / 1000;
 }
 
 // 1回の位置ごとの判定
-function judge(x, y, acc, spd, now) {
-  if (acc > RULE.maxAcc) return;
+function judge(x, y, acc, spd, now, ctx) {
+  ctx = ctx || liveCtx;
+  if (acc > RULE.maxAccU) return;
+  const roughOnly = acc > RULE.maxAcc;     // 位置が粗いときは地下の駅だけ見る（A）
   const inside = new Set();
-  for (const [s, d] of spotsNear(x, y, 250)) {
+  for (const [s, d] of spotsNear(x, y, Math.max(RULE.stU, 250))) {
+    if (roughOnly && !(s.sh === 'st' && s.u)) continue;
+    const o = { ctx };
     if (s.sh === 'st') {
-      if (d > RULE.st) continue;
+      if (d > (s.u ? RULE.stU : RULE.st)) continue;
       inside.add(s.id);
-      if (spd != null && spd >= RULE.stPassSpeed) mark(s.id, 1, spotSnap(s), now);
+      if (spd != null && spd >= RULE.stPassSpeed) mark(s.id, 1, spotSnap(s), now, o);
       else if (spd == null || spd <= RULE.stSlowSpeed) {
-        if (stayAdd(s.id, now) >= RULE.stStay) mark(s.id, 2, spotSnap(s), now);
-      } else if (stay[s.id]) stay[s.id].t = now;   // 中くらいの速さの間は数えない
+        if (stayAdd(ctx, s.id, now) >= RULE.stStay) mark(s.id, 2, spotSnap(s), now, o);
+      } else if (ctx.stay[s.id]) ctx.stay[s.id].t = now;   // 中くらいの速さの間は数えない
     } else if (s.sh === 'mi') {
-      if (d <= RULE.mi) mark(s.id, 2, spotSnap(s), now);
+      if (d <= RULE.mi) mark(s.id, 2, spotSnap(s), now, o);
     } else if (s.sh === 'mu') {
       if (d > RULE.mu) continue;
       inside.add(s.id);
-      if (stayAdd(s.id, now) >= RULE.muStay) mark(s.id, 2, spotSnap(s), now);
+      if (stayAdd(ctx, s.id, now) >= RULE.muStay) mark(s.id, 2, spotSnap(s), now, o);
     } else if (s.sh === 'hi') {
       const r = s.sub === '古墳' ? RULE.kofun : RULE.castle;
-      if (d <= r) mark(s.id, 2, spotSnap(s), now);
+      if (d <= r) mark(s.id, 2, spotSnap(s), now, o);
     }
   }
   // 範囲から出たら、とどまった時間は数え直し
-  for (const id of Object.keys(stay)) if (!inside.has(id)) delete stay[id];
+  for (const id of Object.keys(ctx.stay)) if (!inside.has(id)) delete ctx.stay[id];
+  if (roughOnly) return;
 
   // 速さが分からない最初の1回は市区町村を記録しない（電車の中で開いたときに「訪問」にしないため）
   const c = spd == null ? null : cityAt(x, y);
   if (c) {
-    const lv = spd != null && spd >= RULE.cityPassSpeed ? 1 : 2;
-    mark('c' + c.c, lv, { n: c.n, sh: 'city', sub: '市区町村', x: Math.round(x * 1e3) / 1e3, y: Math.round(y * 1e3) / 1e3, p: c.c.slice(0, 2) }, now);
+    const lv = spd >= RULE.cityPassSpeed ? 1 : 2;
+    mark('c' + c.c, lv, { n: c.n, sh: 'city', sub: '市区町村', x: Math.round(x * 1e3) / 1e3, y: Math.round(y * 1e3) / 1e3, p: c.c.slice(0, 2) }, now, { ctx });
   }
+}
+
+// （B）位置が途切れて離れた所で戻ったら、乗った駅と降りた駅のあいだの駅を「通過（推定）」にする
+function inferRide(a, b, ctx) {
+  if (!LINES.length) return;
+  const dt = (b.t - a.t) / 1000;
+  if (dt < RULE.gapMin || dt > 3 * 3600) return;
+  const d = dist(a.x, a.y, b.x, b.y);
+  if (d < RULE.gapDist) return;
+  const v = d / dt;
+  if (v < RULE.gapSpdMin || v > RULE.gapSpdMax) return;
+  const As = lineStationsNear(a.x, a.y, RULE.gapNear).slice(0, 3);
+  const Bs = lineStationsNear(b.x, b.y, RULE.gapNear).slice(0, 3);
+  // 両端にいちばん近い駅の組から順に試す（乗った駅・降りた駅を落とさないように）
+  const pairs = [];
+  for (const [A, dA] of As) for (const [B, dB] of Bs) pairs.push([A, B, dA + dB]);
+  pairs.sort((p, q) => p[2] - q[2]);
+  let best = null;
+  for (const [A, B] of pairs) { best = linePath(A, B); if (best) break; }
+  if (!best || best.length > 40) return;
+  best.forEach((id, i) => {
+    const v = LINE_ST[id];
+    if (!v) return;
+    const t = Math.round(a.t + (b.t - a.t) * (best.length > 1 ? i / (best.length - 1) : 0));
+    mark(id, 1, { n: v[0], sh: 'st', sub: '駅', x: v[1], y: v[2], p: v[3] }, t, { est: true, ctx });
+  });
 }
 
 function onPos(p) {
@@ -122,13 +183,17 @@ function onPos(p) {
     const lp = [Math.round(x * 1e3) / 1e3, Math.round(y * 1e3) / 1e3];
     if (!lastPos || lastPos[0] !== lp[0] || lastPos[1] !== lp[1]) { lastPos = lp; setLS('lastpos', lp); }
   }
-  onFix(lastFix);
   if (recOn) {
     // いる都県のデータがまだなら読み込む
     const c = cityAt(x, y);
     if (c) needPref(c.c.slice(0, 2));
-    judge(x, y, acc, spd, now);
+    judge(x, y, acc, spd, now, liveCtx);
+    if (acc <= RULE.maxAccU) {
+      if (liveCtx.good) inferRide(liveCtx.good, lastFix, liveCtx);
+      liveCtx.good = lastFix;
+    }
   }
+  onFix(lastFix);
 }
 
 function onPosErr(e) {
@@ -147,8 +212,23 @@ function startWatch() {
 function setRecOn(v) {
   recOn = !!v;
   setLS('recon', recOn);
-  if (!recOn) for (const id of Object.keys(stay)) delete stay[id];
+  if (!recOn) { for (const id of Object.keys(liveCtx.stay)) delete liveCtx.stay[id]; liveCtx.good = null; }
   updWake();
+}
+
+// （C）「いまここ」：最後の位置（10分以内・精度500m以内）から500m以内で、まだ「降車・訪問」になっていない場所
+function hereCandidates() {
+  if (!recOn || !lastFix || lastFix.acc > RULE.hereAcc || Date.now() - lastFix.t > RULE.hereMin * 60000) return [];
+  return spotsNear(lastFix.x, lastFix.y, RULE.hereR)
+    .filter(([s]) => lvOf(s.id) < 2 || (REC[s.id] && REC[s.id].e))
+    .sort((a, b) => a[1] - b[1])
+    .slice(0, 8);
+}
+function markHere(id) {
+  const s = SPOTS.get(id);
+  if (!s || !hereCandidates().some(([c]) => c.id === id)) { toast('いまはこの場所の近くにいないようです'); return false; }
+  mark(id, 2, spotSnap(s), Date.now(), { here: true });
+  return true;
 }
 
 // 画面を消さない（記録中のときだけ）
@@ -177,10 +257,15 @@ function mergeBackup(js) {
     if (!r || !r.s || !r.f) continue;
     const m = REC[id];
     if (!m) { REC[id] = r; add++; continue; }
-    m.lv = Math.max(m.lv, r.lv || 0);
+    if ((r.lv || 0) > m.lv || (!r.e && m.e && (r.lv || 0) >= m.lv)) { m.lv = Math.max(m.lv, r.lv || 0); if (!r.e) delete m.e; }
     m.f = Math.min(m.f, r.f);
     if (r.l > m.l) { m.l = r.l; m.d = r.d; m.s = r.s; }
-    m.n = Math.max(m.n, r.n || 1);
+    if (r.ds || m.ds) {
+      const ds = [...new Set([...(m.ds || []), ...(r.ds || [])])].sort();
+      m.ds = ds.slice(-400);
+    }
+    m.n = Math.max(m.n, r.n || 1, m.ds ? m.ds.length : 0);
+    if (r.h) m.h = 1;
   }
   const seen = new Set(LOG.map(e => e.t + '|' + e.id));
   for (const e of (js.log || [])) if (e && !seen.has(e.t + '|' + e.id)) LOG.push(e);

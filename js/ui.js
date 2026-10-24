@@ -1,4 +1,4 @@
-// ui.js：画面の切り替え・今日・設定（MeguMiru 版1）
+// ui.js：画面の切り替え・今日・設定（MeguMiru 版7：いまここ・GPX の読み込み）
 let curTab = 'map';
 
 function showTab(t) {
@@ -42,9 +42,31 @@ function updLoadPill() {
 }
 
 // ---------- 今日 ----------
+// 版7：GPX でさかのぼった日も見られるように、日付を前後に動かせる
+let todayDay = null;      // null＝今日、それ以外は 'YYYY-MM-DD'
+function logDays() { return [...new Set(LOG.map(e => ymd(e.t)))].sort(); }
+function moveDay(step) {
+  const days = logDays(), today = ymd(Date.now());
+  if (!days.includes(today)) days.push(today);
+  days.sort();
+  const cur = todayDay || today;
+  let i = days.indexOf(cur);
+  if (i < 0) { days.push(cur); days.sort(); i = days.indexOf(cur); }
+  const j = Math.max(0, Math.min(days.length - 1, i + step));
+  todayDay = days[j] === today ? null : days[j];
+  renderToday();
+}
 function renderToday() {
   const today = ymd(Date.now());
-  const ev = LOG.filter(e => ymd(e.t) === today);
+  const day = todayDay || today;
+  const isToday = day === today;
+  const days = logDays();
+  const wd = '日月火水木金土'[new Date(day + 'T12:00:00').getDay()];
+  $('dayLabel').textContent = isToday ? `今日（${+day.slice(5, 7)}/${+day.slice(8)}・${wd}）` : `${day.slice(0, 4)}/${+day.slice(5, 7)}/${+day.slice(8)}（${wd}）`;
+  $('dayPrev').disabled = !days.some(d => d < day);
+  $('dayNext').disabled = isToday;
+  const label = isToday ? '今日' : 'この日';
+  const ev = LOG.filter(e => ymd(e.t) === day);
   const cnt = {};
   for (const e of ev) {
     const r = REC[e.id]; if (!r) continue;
@@ -52,13 +74,14 @@ function renderToday() {
   }
   const sum = SHELF_ORDER.filter(k => cnt[k]).map(k => `${SHELVES[k].icon} ${SHELVES[k].name} ${cnt[k]}`).join('　');
   $('todaySum').innerHTML = ev.length
-    ? `<p class="big">今日のはじめて：${Object.values(cnt).reduce((a, b) => a + b, 0)}</p><p>${sum || 'はじめての場所はまだありません'}</p>`
-    : '<p class="big">今日の記録はまだありません</p><p class="note">アプリを開いたまま出かけると、通った駅や入った市区町村がここに並びます。</p>';
+    ? `<p class="big">${label}のはじめて：${Object.values(cnt).reduce((a, b) => a + b, 0)}</p><p>${sum || 'はじめての場所はありません'}</p>`
+    : (isToday ? '<p class="big">今日の記録はまだありません</p><p class="note">アプリを開いたまま出かけると、通った駅や入った市区町村がここに並びます。閉じていた間の分は、設定から GPX を読み込めます。</p>'
+      : '<p class="big">この日の記録はありません</p>');
   const rows = ev.slice().reverse().map(e => {
     const r = REC[e.id]; if (!r) return '';
     const sh = SHELVES[r.s.sh];
     const k = e.k === 'new' ? 'はじめて' : e.k === 'up' ? LV_NAME[r.s.sh][e.lv] + 'に' : 'また来た';
-    const lv = LV_NAME[r.s.sh][e.lv];
+    const lv = LV_NAME[r.s.sh][e.lv] + (r.e && e.lv === r.lv ? '・推定' : '');
     return `<li class="row" data-id="${esc(e.id)}"><span class="time">${fmtTime(e.t)}</span><span class="dot" style="background:${sh.color}"></span>`
       + `<span class="nm">${esc(r.s.n)}<small>${r.s.sh === 'mu' || r.s.sh === 'hi' ? esc(r.s.sub) : sh.name}${lv && (r.s.sh === 'st' || r.s.sh === 'city') ? '・' + lv : ''}</small></span><span class="st"><span class="kind k-${e.k}">${k}</span></span></li>`;
   }).join('');
@@ -83,6 +106,8 @@ function renderSettings() {
   $('prefList').querySelectorAll('button[data-pc]').forEach(b => b.onclick = () => { needPref(b.dataset.pc, true); renderSettings(); });
   const n = Object.keys(REC).length;
   $('recCount').textContent = `記録：${n}か所`;
+  const gn = getLS('gpxcount', 0);
+  $('gpxCount').textContent = gn ? `これまでに読み込んだ GPX：${gn}件` : '';
   $('verLine').textContent = `MeguMiru 版${APP_VER}`;
   const top = $('seriesTop');
   if (SERIES_TOP_URL) { top.href = SERIES_TOP_URL; top.hidden = false; } else top.hidden = true;
@@ -123,9 +148,66 @@ async function clearAll() {
   toast('記録を消しました');
 }
 
+// ---------- いまここ（C） ----------
+function updHere() {
+  const c = hereCandidates();
+  const b = $('mHere');
+  b.hidden = !c.length;
+  $('mHereN').textContent = c.length > 1 ? c.length : '';
+}
+
+function showHere() {
+  const c = hereCandidates();
+  if (!c.length) { toast('近くに、まだ記録していない場所はありません'); return; }
+  const rows = c.map(([s, d]) => {
+    const sh = SHELVES[s.sh];
+    const lv = lvOf(s.id), r = REC[s.id];
+    const now = lv ? `<small>いまは「${LV_NAME[s.sh][lv]}${r && r.e ? '・推定' : ''}」</small>` : '';
+    return `<li class="row"><span class="dot" style="background:${sh.color}"></span><span class="nm">${esc(s.n)}<small>${esc(s.sh === 'st' ? '駅' : s.sub)}・約${fmtDist(d)}</small>${now}</span>`
+      + `<span class="st"><button class="btn sm primary" data-id="${esc(s.id)}">ここにいる</button></span></li>`;
+  }).join('');
+  $('sheetBody').innerHTML = `<div class="shHead" style="--sc:var(--c)"><span class="shIcon">📍</span><div><h3>いまここ</h3><p class="sub">地下などで自動で記録されないときに、その場で記録できます</p></div></div>`
+    + `<ul class="list">${rows}</ul><p class="hint">近く（500m以内）にいる間だけ押せます。駅は「降車」、ほかは「訪問」になります</p>`;
+  $('sheet').hidden = false;
+  $('sheetBody').querySelectorAll('button[data-id]').forEach(btn => btn.onclick = () => {
+    if (markHere(btn.dataset.id)) { closeSheet(); updHere(); }
+  });
+}
+
+// ---------- GPX（OpenTracks など） ----------
+async function onGpxFiles(files) {
+  if (!files.length) return;
+  const st = $('gpxStatus');
+  st.textContent = '読み込んでいます…';
+  $('btnGpx').disabled = true;
+  try {
+    const r = await importGpxFiles([...files], m => { st.textContent = m; });
+    if (!r) { st.textContent = ''; return; }
+    afterRecChanged();
+    renderSettings();
+    const c = r.count;
+    let msg;
+    if (!r.files) msg = r.skipped ? `読み込み済みのファイルでした（${r.skipped}件）` : '読める記録がありませんでした（時刻のある GPX が必要です）';
+    else {
+      msg = `${r.files}件を読み込みました（${fmtDate(r.from)}〜${fmtDate(r.to)}）。はじめて ${c.new}`
+        + (c.est ? `（うち推定 ${c.est}）` : '') + `・段階が上がった ${c.up}・別の日にまた ${c.again}`;
+      if (r.skipped) msg += `。読み込み済み ${r.skipped}件は飛ばしました`;
+    }
+    if (r.bad) msg += `。読めなかったファイル ${r.bad}件`;
+    st.textContent = msg;
+    toast(msg, 5000);
+    if (r.files && r.to) todayDay = ymd(r.to) === ymd(Date.now()) ? null : ymd(r.to);   // 「今日」の画面で、読み込んだ最後の日を見せる
+  } catch (e) {
+    st.textContent = '読み込めませんでした：' + jaErr(e);
+  } finally {
+    $('btnGpx').disabled = false;
+  }
+}
+
 function afterRecChanged() {
   refreshSpots();
   refreshCity();
+  updHere();
   if (curTab === 'today') renderToday();
   if (curTab === 'zukan') renderZukan();
 }
@@ -150,6 +232,11 @@ function wireUi() {
   $('btnImport').onclick = () => $('fileImport').click();
   $('fileImport').onchange = e => { const f = e.target.files[0]; if (f) importBackup(f); e.target.value = ''; };
   $('btnClear').onclick = clearAll;
+  $('btnGpx').onclick = () => $('fileGpx').click();
+  $('fileGpx').onchange = e => { const f = e.target.files; if (f && f.length) onGpxFiles(f); e.target.value = ''; };
+  $('mHere').onclick = showHere;
+  $('dayPrev').onclick = () => moveDay(-1);
+  $('dayNext').onclick = () => moveDay(1);
   $('btnHelp').onclick = () => showIntro(true);
   initZukanControls();
 }

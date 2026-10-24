@@ -1,4 +1,4 @@
-// data.js：市区町村の境界と、都県ごとの場所データ（MeguMiru 版6）
+// data.js：市区町村の境界と、都県ごとの場所データ（MeguMiru 版7）
 
 // Overpass（OpenStreetMap のデータを取り出す窓口）。上から順に頼む
 const OVP_SERVERS = [
@@ -9,7 +9,7 @@ const OVP_SERVERS = [
 const OVP_LIMIT = 70000;       // 1か所あたりの待ち時間（ミリ秒）
 const PREF_DAYS = 30;          // 都県のデータを取り直すまでの日数（用意したファイルは毎月作り直す）
 const PREF_DV = 2;             // 保存データの形の番号（版1で保存した分は取り直す）
-const DATA_REV = 3;            // 振り分け方の番号（版6で 3：城跡から御所・宮邸などを外し、遺跡の城跡を拾う）。古いファイルは1日おきに取り直しを試す
+const DATA_REV = 4;            // 振り分け方の番号（版6で 3：城跡から御所・宮邸などを外し、遺跡の城跡を拾う／版7で 4：地下駅の印 u）。古いファイルは1日おきに取り直しを試す
 const PREF_RETRY_MIN = 3;      // 失敗したら、自動で頼み直すまでの分
 
 let CITY = [];                 // [{c, p, n, g, bb}]  c=コード, p=都県名, n=名前, g=境界, bb=囲む四角
@@ -122,6 +122,13 @@ function cleanList(list) {
 
 function stationName(n) { return /駅$/.test(n) ? n : n + '駅'; }
 
+// 版7：地下の駅か（地下鉄の駅、地下にあると登録された駅）
+function isUnder(tags) {
+  const neg = v => v != null && v !== '' && !isNaN(parseFloat(v)) && parseFloat(v) < 0;
+  return tags.station === 'subway' || tags.subway === 'yes' || tags.location === 'underground'
+    || tags.underground === 'yes' || neg(tags.level) || neg(tags.layer);
+}
+
 // Overpass の結果を場所の一覧にする。同じ名前で近いものは1つにまとめる
 function parseOsm(js, pc) {
   const out = [];
@@ -140,12 +147,18 @@ function parseOsm(js, pc) {
     const mergeM = sh === 'st' ? 400 : 300;
     const key = sh + '|' + n;
     const same = (byName.get(key) || []).find(s => dist(s.x, s.y, x, y) < mergeM);
-    if (same) { if (!same.w && tags.wikipedia) same.w = tags.wikipedia; continue; }
+    const under = sh === 'st' && isUnder(tags);
+    if (same) {
+      if (!same.w && tags.wikipedia) same.w = tags.wikipedia;
+      if (under) same.u = 1;            // まとめた駅のどれかが地下なら地下駅
+      continue;
+    }
     const s = {
       id: el.type[0] + el.id, sh, sub, n,
       x: Math.round(x * 1e5) / 1e5, y: Math.round(y * 1e5) / 1e5, p
     };
     if (tags.wikipedia) s.w = tags.wikipedia;
+    if (under) s.u = 1;
     out.push(s);
     if (!byName.has(key)) byName.set(key, []);
     byName.get(key).push(s);
@@ -387,4 +400,114 @@ function prefsInBounds(w, s, e, n) {
     if (!(e < b[0] || w > b[2] || n < b[1] || s > b[3])) res.add(c.c.slice(0, 2));
   }
   return [...res];
+}
+
+
+// ---------- 版7：路線（地下鉄などで位置が途切れた間の駅を推定するため） ----------
+// data/lines.json = {v, r, t, st:{駅の番号:[名前, 経度, 緯度, 都県]}, lines:[{n:路線名, s:[駅の番号…]}]}
+let LINES = [];
+const LINE_AT = new Map();     // 駅の番号 → [[路線の番号, 並びの位置], …]
+let LINE_ST = {};
+let LINE_META = null;
+const LINE_GRID = new Map();   // 0.01°のマス → 駅の番号（路線にある駅だけ）
+
+function setLines(js) {
+  LINES = js.lines || [];
+  LINE_ST = js.st || {};
+  LINE_AT.clear(); LINE_GRID.clear();
+  LINES.forEach((ln, li) => ln.s.forEach((id, i) => {
+    if (!LINE_AT.has(id)) LINE_AT.set(id, []);
+    LINE_AT.get(id).push([li, i]);
+  }));
+  for (const [id, v] of Object.entries(LINE_ST)) {
+    const k = gkey(Math.floor(v[1] / GSZ), Math.floor(v[2] / GSZ));
+    if (!LINE_GRID.has(k)) LINE_GRID.set(k, []);
+    LINE_GRID.get(k).push(id);
+  }
+}
+
+async function loadLines() {
+  try {
+    const c = await DB.get('lines');
+    if (c && c.js) {
+      setLines(c.js);
+      LINE_META = { ft: c.ft, r: c.js.r || 1 };
+      if (Date.now() - c.ft < PREF_DAYS * 86400000 && (c.js.r || 1) >= DATA_REV) return;
+    }
+  } catch (e) { /* 取り直す */ }
+  const day = ymd(Date.now()).replace(/-/g, '');
+  for (const base of DATA_SRC) {
+    const ctl = new AbortController();
+    const tm = setTimeout(() => ctl.abort(), 20000);
+    try {
+      const res = await fetch(base + 'lines.json?d=' + day, { signal: ctl.signal, cache: 'no-cache' });
+      clearTimeout(tm);
+      if (!res.ok) continue;
+      const js = await res.json();
+      if (!js || !Array.isArray(js.lines)) continue;
+      setLines(js);
+      // 古い振り分け方なら1日後にもう一度取りに行く
+      const ft = (js.r || 1) < DATA_REV ? Date.now() - (PREF_DAYS - 1) * 86400000 : Date.now();
+      LINE_META = { ft, r: js.r || 1 };
+      try { await DB.set('lines', { ft, js }); } catch (e) { /* 保存できなくても使う */ }
+      return;
+    } catch (e) { clearTimeout(tm); }
+  }
+}
+
+// その場所から r m 以内の、路線にある駅（近い順）
+function lineStationsNear(x, y, r) {
+  const res = [];
+  const dy = r / 111000, dx = r / (111000 * Math.cos(y * Math.PI / 180));
+  for (let ix = Math.floor((x - dx) / GSZ); ix <= Math.floor((x + dx) / GSZ); ix++)
+    for (let iy = Math.floor((y - dy) / GSZ); iy <= Math.floor((y + dy) / GSZ); iy++)
+      for (const id of (LINE_GRID.get(gkey(ix, iy)) || [])) {
+        const v = LINE_ST[id];
+        const d = dist(x, y, v[1], v[2]);
+        if (d <= r) res.push([id, d]);
+      }
+  return res.sort((a, b) => a[1] - b[1]);
+}
+
+// 駅 A から駅 B までの、路線の上の駅の並び（同じ路線か、1回の乗り換え）。いちばん駅の数が少ないもの
+function linePath(A, B) {
+  if (A === B) return null;
+  const at = id => LINE_AT.get(id) || [];
+  const seg = (li, i, j) => { const s = LINES[li].s; return i <= j ? s.slice(i, j + 1) : s.slice(j, i + 1).reverse(); };
+  let best = null;
+  for (const [la, ia] of at(A)) for (const [lb, ib] of at(B)) {
+    if (la === lb) {
+      const p = seg(la, ia, ib);
+      if (!best || p.length < best.length) best = p;
+    }
+  }
+  if (best) return best;
+  // 1回の乗り換え：A の路線と B の路線の両方にある駅 T
+  for (const [la, ia] of at(A)) {
+    const sa = LINES[la].s;
+    for (const [lb, ib] of at(B)) {
+      const sb = LINES[lb].s;
+      for (let it = 0; it < sa.length; it++) {
+        const jt = sb.indexOf(sa[it]);
+        if (jt < 0) continue;
+        const p = seg(la, ia, it).concat(seg(lb, jt, ib).slice(1));
+        if (!best || p.length < best.length) best = p;
+      }
+    }
+  }
+  return best;
+}
+
+// 都県のデータを読み終えるまで待つ（GPX の読み込みで使う）
+async function ensurePrefs(pcs, onWait) {
+  for (const pc of pcs) {
+    if (PREF_META[pc]) continue;
+    needPref(pc, true);
+    const t0 = Date.now();
+    while (!PREF_META[pc] && Date.now() - t0 < 180000) {
+      if (PREF_FAIL[pc] && PREF_FAIL[pc] >= t0) break;
+      if (onWait) onWait(pc);
+      await new Promise(r => setTimeout(r, 300));
+    }
+  }
 }

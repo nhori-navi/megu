@@ -1,4 +1,4 @@
-// zukan.js：図鑑と、場所の詳しい画面（MeguMiru 版1）
+// zukan.js：図鑑と、場所の詳しい画面（MeguMiru 版7：推定・いまここの表示）
 let zkShelf = getLS('zkshelf', 'st');
 let zkPref = getLS('zkpref', '');
 let zkState = getLS('zkstate', 'all');   // all / done / yet
@@ -60,7 +60,7 @@ function renderZukan() {
 
   const rows = items.slice(0, zkLimit).map(s => {
     const lv = lvOf(s.id), r = REC[s.id];
-    const st = lv ? `<span class="badge lv${lv}">${LV_NAME[s.sh][lv]}</span><span class="date">${fmtDate(r.l)}</span>`
+    const st = lv ? `<span class="badge lv${lv}${r.e ? ' est' : ''}">${LV_NAME[s.sh][lv]}${r.e ? '・推定' : ''}</span><span class="date">${fmtDate(r.l)}</span>`
       : (here && s.x != null ? `<span class="date">${fmtDist(dOf(s))}</span>` : '');
     const sub = s.sh === 'st' || s.sh === 'city' ? '' : s.sub + '・';
     return `<li class="row${lv ? '' : ' yet'}" data-id="${esc(s.id)}"><span class="dot" style="background:${SHELVES[s.sh].color}"></span>`
@@ -91,14 +91,16 @@ function showSpot(id) {
   const sh = SHELVES[s.sh];
   let st;
   if (r) {
-    st = `<p class="lvline"><span class="badge lv${r.lv}">${LV_NAME[s.sh][r.lv]}</span></p>`
+    st = `<p class="lvline"><span class="badge lv${r.lv}${r.e ? ' est' : ''}">${LV_NAME[s.sh][r.lv]}${r.e ? '・推定' : ''}</span>${r.h ? '<span class="tag">📍 いまここで記録</span>' : ''}</p>`
       + `<p>はじめて：${fmtDate(r.f)} ${fmtTime(r.f)}</p>`
       + `<p>最後：${fmtDate(r.l)}　行った日数：${r.n}日</p>`;
-    if (s.sh === 'st' && r.lv === 1) st += '<p class="hint">ゆっくり3分いると「降車」になります</p>';
+    if (r.e) st += '<p class="hint">地下などで位置が途切れた間に、乗った駅と降りた駅を路線で結んで推定しました。実際に通る（地上で位置が取れる）と推定ではなくなります</p>';
+    else if (s.sh === 'st' && r.lv === 1) st += '<p class="hint">ゆっくり3分いると「降車」になります</p>';
     if (s.sh === 'city' && r.lv === 1) st += '<p class="hint">乗り物で通っただけなので薄く塗っています。歩いて入ると濃くなります</p>';
   } else {
     let how = '';
-    if (s.sh === 'st') how = '駅のまわり150m以内を通ると「通過」、ゆっくり3分いると「降車」になります';
+    if (s.sh === 'st') how = s.u ? '地下の駅です。駅のまわり300m以内を通ると「通過」、ゆっくり3分いると「降車」になります'
+      : '駅のまわり150m以内を通ると「通過」、ゆっくり3分いると「降車」になります';
     else if (s.sh === 'mi') how = '100m以内に入ると記録されます';
     else if (s.sh === 'mu') how = '100m以内に20分とどまると記録されます';
     else if (s.sh === 'hi') how = (s.sub === '古墳' ? '80m' : '200m') + '以内に入ると記録されます';

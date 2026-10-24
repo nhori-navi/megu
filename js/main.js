@@ -1,4 +1,4 @@
-// main.js：起動（MeguMiru 版1）
+// main.js：起動（MeguMiru 版7）
 async function boot() {
   wireUi();
   wireIntro();
@@ -10,12 +10,14 @@ async function boot() {
   }
   await loadRec();
   await restorePrefs();
+  loadLines();                       // 路線（途切れた間の駅の推定に使う）。待たずに裏で
 
   onSpotsChanged = () => { refreshSpots(); if (curTab === 'zukan') renderZukan(); };
   onRecChanged = (id) => {
     if (id[0] === 'c') refreshCity(); else refreshSpots();
     if (curTab === 'today') renderToday();
     if (curTab === 'zukan') renderZukan();
+    updHere();
   };
   onPrefStatus = (pc, s, msg) => {
     const old = prefState[pc];
@@ -25,7 +27,7 @@ async function boot() {
     if (s === 'fail') toast(`${PREF_NAME[pc]}のデータを読み込めませんでした：${msg}`, 4500);
     if (curTab === 'set') renderSettings();
   };
-  onFix = (fix, err) => { updRecPill(err); mapOnFix(fix); };
+  onFix = (fix, err) => { updRecPill(err); mapOnFix(fix); updHere(); };
 
   initMap();
   showTab('map');
