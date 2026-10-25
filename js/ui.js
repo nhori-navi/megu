@@ -1,4 +1,4 @@
-// ui.js：画面の切り替え・今日・設定（MeguMiru 版13：フリマ。版12：計画タブ。版11：路線の棚・乗った区間。版10：一言説明。版9：月のふりかえり・MichiMiru の記録・近づいたら知らせる）
+// ui.js：画面の切り替え・今日・設定（MeguMiru 版14：ホーム画面のアプリ。版13：フリマ。版12：計画タブ。版11：路線の棚・乗った区間。版10：一言説明。版9：月のふりかえり・MichiMiru の記録・近づいたら知らせる）
 let curTab = 'map';
 
 function showTab(t) {
@@ -174,6 +174,7 @@ function renderSettings() {
   $('setNear').checked = nearOn;
   $('setWiki').checked = wikiOn;
   renderFleaSettings();
+  renderPwa();
   const ml = getLS('michilast', 0), mn = getLS('michin', 0);
   $('michiStatus').textContent = !michiOn ? '使っていません' : ml ? `${mn}件の記録を読んでいます（最後に読んだ：${fmtDate(ml)} ${fmtTime(ml)}）` : 'まだ MichiMiru の記録はありません';
   const gn = getLS('gpxcount', 0);

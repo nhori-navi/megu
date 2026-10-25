@@ -1,4 +1,4 @@
-// main.js：起動（MeguMiru 版13）
+// main.js：起動（MeguMiru 版14：ホーム画面のアプリ）
 async function boot() {
   wireUi();
   wireIntro();
@@ -56,3 +56,19 @@ async function boot() {
 }
 
 window.addEventListener('DOMContentLoaded', boot);
+
+// ---------- 版14：ホーム画面のアプリ ----------
+let installEv = null;
+const isStandalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEv = e; if (typeof curTab !== 'undefined' && curTab === 'set') renderPwa(); });
+window.addEventListener('appinstalled', () => { installEv = null; toast('ホーム画面に置きました'); renderPwa(); });
+function renderPwa() {
+  const st = $('pwaStatus'), b = $('btnInstall');
+  if (!st) return;
+  st.textContent = isStandalone() ? '📱 ホーム画面のアプリとして開いています' : installEv ? 'このスマホのホーム画面に置けます' : 'Chrome で開いています';
+  b.hidden = !installEv || isStandalone();
+  b.onclick = async () => { if (!installEv) return; installEv.prompt(); try { await installEv.userChoice; } catch (e) { /* なし */ } installEv = null; renderPwa(); };
+}
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || /[?&]swtest/.test(location.search))) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => { /* 使えなくてもアプリは動く */ }));
+}
