@@ -1,4 +1,4 @@
-// ui.js：画面の切り替え・今日・設定（MeguMiru 版7：いまここ・GPX の読み込み）
+// ui.js：画面の切り替え・今日・設定（MeguMiru 版9：月のふりかえり・MichiMiru の記録・近づいたら知らせる）
 let curTab = 'map';
 
 function showTab(t) {
@@ -56,7 +56,67 @@ function moveDay(step) {
   todayDay = days[j] === today ? null : days[j];
   renderToday();
 }
+// 版9：日ごと／月ごとの切り替え
+let todayMode = 'day';
+let monthCur = null;      // 'YYYY-MM'
+function setTodayMode(m) {
+  todayMode = m;
+  renderToday();
+}
+function monthShift(step) {
+  const [y, m] = (monthCur || ymd(Date.now()).slice(0, 7)).split('-').map(Number);
+  const d = new Date(y, m - 1 + step, 1);
+  monthCur = d.getFullYear() + '-' + pad2(d.getMonth() + 1);
+  renderToday();
+}
+function renderMonth() {
+  const nowM = ymd(Date.now()).slice(0, 7);
+  const mon = monthCur || nowM;
+  const [y, m] = mon.split('-').map(Number);
+  $('monthLabel').textContent = `${y}年${m}月`;
+  const months = [...new Set(LOG.map(e => ymd(e.t).slice(0, 7)))].sort();
+  $('monPrev').disabled = !months.some(x => x < mon);
+  $('monNext').disabled = mon >= nowM;
+  const ev = LOG.filter(e => ymd(e.t).slice(0, 7) === mon);
+  const firstBy = {}, perDay = {}, firsts = [];
+  for (const e of ev) {
+    const r = REC[e.id]; if (!r) continue;
+    const d = ymd(e.t);
+    perDay[d] = perDay[d] || { all: 0, n: 0 };
+    perDay[d].all++;
+    if (e.k === 'new') { firstBy[r.s.sh] = (firstBy[r.s.sh] || 0) + 1; perDay[d].n++; firsts.push([e, r]); }
+  }
+  const total = Object.values(firstBy).reduce((a, b) => a + b, 0);
+  const days = Object.keys(perDay).length;
+  const sum = SHELF_ORDER.filter(k => firstBy[k]).map(k => `${SHELVES[k].icon} ${SHELVES[k].name} ${firstBy[k]}`).join('　');
+  // 駅と市区町村以外（数が少ないもの）は名前も出す
+  const rare = firsts.filter(([, r]) => r.s.sh !== 'st' && r.s.sh !== 'city').map(([, r]) => esc(r.s.n));
+  $('todaySum').innerHTML = ev.length
+    ? `<p class="big">この月のはじめて：${total}</p><p>${sum || 'はじめての場所はありません'}</p><p class="note">記録のあった日：${days}日</p>`
+      + (rare.length ? `<p class="note">${rare.slice(0, 12).join('、')}${rare.length > 12 ? ` ほか${rare.length - 12}か所` : ''}</p>` : '')
+    : '<p class="big">この月の記録はありません</p>';
+  // カレンダー（日曜はじまり）
+  const first = new Date(y, m - 1, 1), last = new Date(y, m, 0).getDate();
+  let cells = '日月火水木金土'.split('').map(w => `<div class="calW">${w}</div>`).join('');
+  for (let i = 0; i < first.getDay(); i++) cells += '<div></div>';
+  const today = ymd(Date.now());
+  for (let d = 1; d <= last; d++) {
+    const key = `${mon}-${pad2(d)}`, pd = perDay[key];
+    const cls = ['calD', pd ? 'has' : '', key === today ? 'today' : ''].join(' ');
+    cells += `<button class="${cls}" type="button" data-day="${key}" ${pd ? '' : 'disabled'}><span>${d}</span>${pd ? `<small>${pd.n ? '+' + pd.n : '・'}</small>` : ''}</button>`;
+  }
+  $('todayList').innerHTML = `<div class="cal">${cells}</div><p class="note">数字はその日のはじめての数。押すとその日の記録を見られます</p>`;
+  $('todayList').querySelectorAll('.calD.has').forEach(b => b.onclick = () => {
+    todayDay = b.dataset.day === today ? null : b.dataset.day;
+    setTodayMode('day');
+  });
+}
 function renderToday() {
+  $('modeDay').classList.toggle('on', todayMode === 'day');
+  $('modeMonth').classList.toggle('on', todayMode === 'month');
+  $('dayNavBox').hidden = todayMode !== 'day';
+  $('monNavBox').hidden = todayMode !== 'month';
+  if (todayMode === 'month') { renderMonth(); return; }
   const today = ymd(Date.now());
   const day = todayDay || today;
   const isToday = day === today;
@@ -106,6 +166,10 @@ function renderSettings() {
   $('prefList').querySelectorAll('button[data-pc]').forEach(b => b.onclick = () => { needPref(b.dataset.pc, true); renderSettings(); });
   const n = Object.keys(REC).length;
   $('recCount').textContent = `記録：${n}か所`;
+  $('setMichi').checked = michiOn;
+  $('setNear').checked = nearOn;
+  const ml = getLS('michilast', 0), mn = getLS('michin', 0);
+  $('michiStatus').textContent = !michiOn ? '使っていません' : ml ? `${mn}件の記録を読んでいます（最後に読んだ：${fmtDate(ml)} ${fmtTime(ml)}）` : 'まだ MichiMiru の記録はありません';
   const gn = getLS('gpxcount', 0);
   $('gpxCount').textContent = gn ? `これまでに読み込んだ GPX：${gn}件` : '';
   $('verLine').textContent = `MeguMiru 版${APP_VER}`;
@@ -174,6 +238,20 @@ function showHere() {
   });
 }
 
+// ---------- MichiMiru の記録（版9） ----------
+let michiTimer = null;
+function runMichi(delay) {
+  clearTimeout(michiTimer);
+  michiTimer = setTimeout(async () => {
+    const r = await michiSync();
+    if (!r || !r.tracks) return;
+    afterRecChanged();
+    if (curTab === 'set') renderSettings();
+    const c = r.count;
+    if (c.new || c.up) toast(`🚶 MichiMiru の記録から：はじめて ${c.new}` + (c.est ? `（うち推定 ${c.est}）` : '') + (c.up ? `・段階が上がった ${c.up}` : ''), 5000);
+  }, delay || 0);
+}
+
 // ---------- GPX（OpenTracks など） ----------
 async function onGpxFiles(files) {
   if (!files.length) return;
@@ -236,6 +314,12 @@ function wireUi() {
   $('fileGpx').onchange = e => { const f = e.target.files; if (f && f.length) onGpxFiles(f); e.target.value = ''; };
   $('mHere').onclick = showHere;
   $('dayPrev').onclick = () => moveDay(-1);
+  $('modeDay').onclick = () => setTodayMode('day');
+  $('modeMonth').onclick = () => { monthCur = (todayDay || ymd(Date.now())).slice(0, 7); setTodayMode('month'); };
+  $('monPrev').onclick = () => monthShift(-1);
+  $('monNext').onclick = () => monthShift(1);
+  $('setMichi').onchange = e => { michiOn = e.target.checked; setLS('michion', michiOn); if (michiOn) { michiSig = ''; runMichi(); } renderSettings(); };
+  $('setNear').onchange = e => { nearOn = e.target.checked; setLS('nearon', nearOn); if (!nearOn) hideNear(); };
   $('dayNext').onclick = () => moveDay(1);
   $('btnHelp').onclick = () => showIntro(true);
   initZukanControls();

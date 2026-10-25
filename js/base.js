@@ -1,5 +1,5 @@
-// base.js：共通の定数と道具（MeguMiru 版7）
-const APP_VER = 7;
+// base.js：共通の定数と道具（MeguMiru 版9）
+const APP_VER = 9;
 
 // 5つの棚
 const SHELVES = {
@@ -37,7 +37,9 @@ const RULE = {
   // 版7（B）途切れた間の推定：1分以上・800m以上離れて、時速9〜150kmの動きなら、両端から500m以内の駅を路線で結ぶ
   gapMin: 60, gapDist: 800, gapSpdMin: 2.5, gapSpdMax: 42, gapNear: 500,
   // 版7（C）「いまここ」：最後の位置が10分以内・精度500m以内で、そこから500m以内
-  hereMin: 10, hereAcc: 500, hereR: 500
+  hereMin: 10, hereAcc: 500, hereR: 500,
+  // 版9 近づいたら知らせる：400m以内、秒速4m（時速約14km）まで、位置の精度100m以内、同じ場所は12時間に1回
+  nearR: 400, nearSpd: 4, nearAcc: 100, nearAgain: 12
 };
 
 // 記録の段階
