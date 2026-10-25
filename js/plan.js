@@ -1,10 +1,10 @@
-// plan.js：行き先ピンと「計画」タブ（MeguMiru 版12）
+// plan.js：行き先ピンと「計画」タブ（MeguMiru 版12。版13：フリマとの切り替え、フリマの★から立てたピン）
 // ・地図を長押し（パソコンは右クリック）すると、そこに行き先ピンを立てられる。名前・日付（なくてもよい）・メモ
 // ・ピンのまわり5kmの、まだ行っていない場所（駅・道の駅・ミュージアム・史跡）と、まだ乗っていない区間を出す
 // ・日付が過ぎたピンは、その日にこのまわりで集めたものも出す
 // ・ピンはこのスマホの中だけ（IndexedDB 'plans'）。書き出し・読み込みにも入る
 
-let PLANS = [];        // [{id, n, x, y, d:'YYYY-MM-DD'|'', m:メモ, t:作った時刻}]
+let PLANS = [];        // [{id, n, x, y, d:'YYYY-MM-DD'|'', m:メモ, t:作った時刻, u:案内のページ, fl:フリマの番号}]
 let onPlansChanged = () => {};
 const PLAN_R = 5000;
 
@@ -82,6 +82,11 @@ function planWhen(p) {
 function renderPlan() {
   const box = $('planList');
   if (!box) return;
+  // 版13：行き先ピン／フリマの切り替え
+  $('pvPins').classList.toggle('on', planView !== 'flea');
+  $('pvFlea').classList.toggle('on', planView === 'flea');
+  $('planHint').hidden = planView === 'flea';
+  if (planView === 'flea') { renderFlea(box); return; }
   const today = ymd(Date.now());
   const fut = PLANS.filter(p => p.d && p.d >= today).sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : a.t - b.t);
   const nod = PLANS.filter(p => !p.d).sort((a, b) => b.t - a.t);
@@ -91,7 +96,7 @@ function renderPlan() {
     const w = planWhen(p), near = planNear(p);
     const finds = w.cls === 'past' ? planDayFinds(p) : [];
     return `<li class="plan ${w.cls}" data-id="${esc(p.id)}"><span class="pDate">${esc(w.label)}</span>`
-      + `<span class="pName">🚩 ${esc(p.n)}${here ? `<small>ここから ${fmtDist(dist(here[0], here[1], p.x, p.y))}</small>` : ''}</span>`
+      + `<span class="pName">${p.fl ? '🛍' : '🚩'} ${esc(p.n)}${here ? `<small>ここから ${fmtDist(dist(here[0], here[1], p.x, p.y))}</small>` : ''}</span>`
       + `<span class="pSum">${w.cls === 'past' ? (finds.length ? `この日に集めたもの ${finds.length}` : 'この日の記録はありません') + '　' : ''}${esc(planSummary(near))}</span>`
       + (p.m ? `<span class="pMemo">${esc(p.m)}</span>` : '') + '</li>';
   };
@@ -133,6 +138,7 @@ function showPlan(id) {
   }
   $('sheetBody').innerHTML = `<div class="shHead" style="--sc:#5b4a6b"><span class="shIcon">🚩</span><div><h3>${esc(p.n)}</h3><p class="sub">${esc(w.label)}・行き先ピン</p></div></div>`
     + (p.m ? `<p class="pMemoL">${esc(p.m)}</p>` : '')
+    + (p.u ? `<p><a href="${esc(p.u)}" target="_blank" rel="noopener">${p.fl ? 'フリマの案内（元のページ）' : '案内のページ'}</a>${p.fl && FLEA ? (() => { const e = FLEA.ev.find(x => x.id === p.fl); return e && e.st ? `　<span class="badge flSt">${esc(e.st)}</span>` : ''; })() : ''}</p>` : '')
     + (near.missing.length ? `<p class="note">${near.missing.map(pc => PREF_NAME[pc]).join('・')}のデータを読み込んでいます…（読み込むと増えます）</p>` : '')
     + finds
     + `<p class="lvline"><b>まわり5km</b>　${esc(planSummary(near))}</p>`

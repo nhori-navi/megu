@@ -1,5 +1,5 @@
-// base.js：共通の定数と道具（MeguMiru 版12）
-const APP_VER = 12;
+// base.js：共通の定数と道具（MeguMiru 版13）
+const APP_VER = 13;
 
 // 5つの棚
 const SHELVES = {
@@ -8,10 +8,12 @@ const SHELVES = {
   mi:   { name: '道の駅',     icon: '🛣️', color: '#2f8f5b' },
   mu:   { name: 'ミュージアム', icon: '🏛️', color: '#c0782f' },
   hi:   { name: '史跡',       icon: '🏯', color: '#8b5e3c' },
-  ln:   { name: '路線',       icon: '🚃', color: '#c2416b' }      // 版11：路線の乗りつぶし（場所ではなく区間を集める）
+  ln:   { name: '路線',       icon: '🚃', color: '#c2416b' },     // 版11：路線の乗りつぶし（場所ではなく区間を集める）
+  fl:   { name: 'フリマ',     icon: '🛍', color: '#d9822b' }      // 版13：フリマ（集める棚ではなく、地図の切り替えだけ）
 };
 const SHELF_ORDER = ['st', 'city', 'mi', 'mu', 'hi'];   // 場所の棚
-const ZK_ORDER = ['st', 'city', 'mi', 'mu', 'hi', 'ln'];  // 図鑑と地図の切り替えに出す棚
+const ZK_ORDER = ['st', 'city', 'mi', 'mu', 'hi', 'ln'];  // 図鑑に出す棚
+const MAP_CHIPS = ['st', 'city', 'mi', 'mu', 'hi', 'ln', 'fl'];  // 地図の切り替え
 
 // 対象の10都県（コードは都道府県番号）
 const PREFS = [

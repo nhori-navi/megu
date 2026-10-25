@@ -2,7 +2,7 @@
 let map = null;
 let mapReady = false;
 let follow = true;
-let filt = Object.assign({ st: true, city: true, mi: true, mu: true, hi: true, ln: true }, getLS('filter', {}));
+let filt = Object.assign({ st: true, city: true, mi: true, mu: true, hi: true, ln: true, fl: true }, getLS('filter', {}));
 const LOAD_ZOOM = 9;   // これより近づいたら、画面に入った都県のデータを読み込む
 
 // ピンの絵を描いて地図に登録する
@@ -68,6 +68,25 @@ function addPlanImage() {
   map.addImage('pin-plan', g.getImageData(0, 0, cv.width, cv.height), { pixelRatio: R });
 }
 let planFocus = null;
+// 版13：フリマの会場の印
+function addFleaImage() {
+  if (map.hasImage && map.hasImage('pin-flea')) return;
+  const R = 2, W = 26, H = 26;
+  const cv = document.createElement('canvas');
+  cv.width = W * R; cv.height = H * R;
+  const g = cv.getContext('2d');
+  g.scale(R, R);
+  g.shadowColor = 'rgba(0,0,0,0.3)'; g.shadowBlur = 2; g.shadowOffsetY = 1;
+  g.beginPath(); g.arc(13, 13, 11, 0, Math.PI * 2); g.fillStyle = SHELVES.fl.color; g.fill();
+  g.shadowColor = 'transparent'; g.lineWidth = 2; g.strokeStyle = '#fff'; g.stroke();
+  g.font = '12px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🛍', 13, 13.5);
+  map.addImage('pin-flea', g.getImageData(0, 0, cv.width, cv.height), { pixelRatio: R });
+}
+function refreshFlea() {
+  if (!mapReady) return;
+  map.getSource('flea').setData(fleaGeo());
+}
 function plansGeo() {
   const today = ymd(Date.now());
   return { type: 'FeatureCollection', features: PLANS.map(p => ({ type: 'Feature', properties: { id: p.id, n: p.n, past: p.d && p.d < today ? 1 : 0 }, geometry: { type: 'Point', coordinates: [p.x, p.y] } })) };
@@ -137,6 +156,7 @@ function setupLayers() {
   map.addSource('rides', { type: 'geojson', data: ridesGeo() });
   map.addSource('plans', { type: 'geojson', data: plansGeo() });
   map.addSource('plan-circle', { type: 'geojson', data: planCircleGeo() });
+  map.addSource('flea', { type: 'geojson', data: fleaGeo() });
   map.addLayer({
     id: 'city-fill', type: 'fill', source: 'city', slot: 'middle',
     paint: { 'fill-color': cityColorExpr(), 'fill-emissive-strength': 1 }
@@ -200,6 +220,13 @@ function setupLayers() {
   addPlanImage();
   map.addLayer({ id: 'plan-circle', type: 'fill', source: 'plan-circle', slot: 'middle', paint: { 'fill-color': '#e0484f', 'fill-opacity': 0.05, 'fill-emissive-strength': 1 } });
   map.addLayer({ id: 'plan-circle-line', type: 'line', source: 'plan-circle', slot: 'middle', paint: { 'line-color': '#e0484f', 'line-width': 1.6, 'line-dasharray': [2, 1.5], 'line-opacity': 0.7, 'line-emissive-strength': 1 } });
+  addFleaImage();
+  map.addLayer({
+    id: 'flea', type: 'symbol', source: 'flea', slot: 'top',
+    layout: { 'icon-image': 'pin-flea', 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 7, 0.7, 13, 1],
+      'text-field': ['step', ['zoom'], '', 11, ['get', 'n']], 'text-size': 11, 'text-anchor': 'top', 'text-offset': [0, 0.9], 'text-optional': true },
+    paint: { 'icon-emissive-strength': 1, 'text-color': '#8a4b10', 'text-halo-color': '#fff', 'text-halo-width': 1.3, 'text-emissive-strength': 1 }
+  });
   map.addLayer({
     id: 'plans', type: 'symbol', source: 'plans', slot: 'top',
     layout: {
@@ -296,6 +323,7 @@ function applyFilter() {
   const vis = filt.city ? 'visible' : 'none';
   map.setLayoutProperty('city-fill', 'visibility', vis);
   map.setLayoutProperty('city-line', 'visibility', vis);
+  map.setLayoutProperty('flea', 'visibility', filt.fl ? 'visible' : 'none');
   const lv = filt.ln ? 'visible' : 'none';
   map.setLayoutProperty('rides', 'visibility', lv);
   map.setLayoutProperty('rides-est', 'visibility', lv);
@@ -337,6 +365,8 @@ function onMapClick(e) {
   const box = [[e.point.x - pad, e.point.y - pad * 2], [e.point.x + pad, e.point.y + pad / 2]];
   const pf = (map.queryRenderedFeatures(box, { layers: ['plans'] }) || []).find(f => f.properties && planById(f.properties.id));
   if (pf) { const id = pf.properties.id; planFocus = id; refreshPlans(); showPlan(id); return; }
+  const ff = filt.fl && (map.queryRenderedFeatures(box, { layers: ['flea'] }) || []).find(f => f.properties && f.properties.vc && FLEA_V[f.properties.vc]);
+  if (ff) { showFleaVenue(ff.properties.vc); return; }
   const hit = map.queryRenderedFeatures(box, { layers: ['spots', 'spots-pin'] })
     .sort((a, b) => (b.properties.v || 0) - (a.properties.v || 0));
   if (hit && hit.length) { showSpot(hit[0].properties.id); return; }

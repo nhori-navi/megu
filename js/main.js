@@ -1,4 +1,4 @@
-// main.js：起動（MeguMiru 版12）
+// main.js：起動（MeguMiru 版13）
 async function boot() {
   wireUi();
   wireIntro();
@@ -11,6 +11,7 @@ async function boot() {
   await loadRec();
   await restorePrefs();
   await loadPlans();                 // 版12：行き先ピン
+  await loadFleaCache();             // 版13：フリマ
   // 路線（途切れた間の駅の推定・乗った区間に使う）と線路の形。待たずに裏で
   loadLines().then(() => { if (curTab === 'zukan') renderZukan(); }).then(loadRails).then(() => refreshRides());
 
@@ -21,6 +22,8 @@ async function boot() {
     if (!$('sheet').hidden && planOpen && $('plFly')) showPlan(planOpen);   // 行き先ピンの画面を開いていたら描き直す
   };
   onPlansChanged = () => { refreshPlans(); if (curTab === 'plan') renderPlan(); };
+  onFleaChanged = () => { refreshFlea(); if (curTab === 'plan') renderPlan(); if (curTab === 'set') renderFleaSettings(); };
+  setTimeout(() => fleaFetch(), 2500);   // 12時間たっていれば受け取り直す
   onSegChanged = () => { refreshRides(); if (curTab === 'zukan' && zkShelf === 'ln') renderZukan(); };
   onRecChanged = (id) => {
     if (id[0] === 'c') refreshCity(); else refreshSpots();

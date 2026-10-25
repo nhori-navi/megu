@@ -1,4 +1,4 @@
-// ui.js：画面の切り替え・今日・設定（MeguMiru 版12：計画タブ。版11：路線の棚・乗った区間。版10：一言説明。版9：月のふりかえり・MichiMiru の記録・近づいたら知らせる）
+// ui.js：画面の切り替え・今日・設定（MeguMiru 版13：フリマ。版12：計画タブ。版11：路線の棚・乗った区間。版10：一言説明。版9：月のふりかえり・MichiMiru の記録・近づいたら知らせる）
 let curTab = 'map';
 
 function showTab(t) {
@@ -173,6 +173,7 @@ function renderSettings() {
   $('setMichi').checked = michiOn;
   $('setNear').checked = nearOn;
   $('setWiki').checked = wikiOn;
+  renderFleaSettings();
   const ml = getLS('michilast', 0), mn = getLS('michin', 0);
   $('michiStatus').textContent = !michiOn ? '使っていません' : ml ? `${mn}件の記録を読んでいます（最後に読んだ：${fmtDate(ml)} ${fmtTime(ml)}）` : 'まだ MichiMiru の記録はありません';
   const gn = getLS('gpxcount', 0);
@@ -315,7 +316,7 @@ function afterRecChanged() {
 // ---------- 画面の部品をつなぐ ----------
 function wireUi() {
   document.querySelectorAll('#tabbar button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
-  $('chips').innerHTML = ZK_ORDER.map(k => `<button class="chip" data-sh="${k}" style="--sc:${SHELVES[k].color}">${SHELVES[k].icon}<span>${SHELVES[k].name}</span></button>`).join('');
+  $('chips').innerHTML = MAP_CHIPS.map(k => `<button class="chip" data-sh="${k}" style="--sc:${SHELVES[k].color}">${SHELVES[k].icon}<span>${SHELVES[k].name}</span></button>`).join('');
   document.querySelectorAll('#chips .chip').forEach(b => b.onclick = () => { filt[b.dataset.sh] = !filt[b.dataset.sh]; applyFilter(); });
   applyFilter();
   $('mFollow').onclick = () => {
@@ -341,6 +342,9 @@ function wireUi() {
   $('monPrev').onclick = () => monthShift(-1);
   $('monNext').onclick = () => monthShift(1);
   $('setMichi').onchange = e => { michiOn = e.target.checked; setLS('michion', michiOn); if (michiOn) { michiSig = ''; runMichi(); } renderSettings(); };
+  wireFleaSettings();
+  $('pvPins').onclick = () => { planView = 'pins'; setLS('planview', planView); renderPlan(); };
+  $('pvFlea').onclick = () => { planView = 'flea'; setLS('planview', planView); renderPlan(); };
   $('setWiki').onchange = e => { wikiOn = e.target.checked; setLS('wikion', wikiOn); };
   $('setNear').onchange = e => { nearOn = e.target.checked; setLS('nearon', nearOn); if (!nearOn) hideNear(); };
   $('dayNext').onclick = () => moveDay(1);
