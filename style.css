@@ -271,3 +271,16 @@ a { color: var(--c); }
 .fld { display: block; margin: 10px 0; font-size: 13px; color: var(--sub); }
 .fld input, .fld textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); font: inherit; font-size: 16px; }
 @media (prefers-color-scheme: dark) { .plan.today { background: #3a2427; } }
+
+/* 版13：フリマ */
+#p-plan .segBtn { margin-bottom: 8px; }
+.flH { margin: 14px 2px 6px; font-size: 14px; color: #8a4b10; }
+.flRow .nm { min-width: 0; }
+.flRow.cancel .nm { text-decoration: line-through; opacity: .6; }
+.flD { color: #8a4b10; font-weight: 600; }
+.star { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: #c98a1b; font-size: 18px; line-height: 1; padding: 0; }
+.star.on { background: #fff3d6; border-color: #e3b04b; }
+.flLink { margin-left: 6px; font-size: 12px; color: var(--c); }
+.badge.flSt { background: #b8373d; }
+.flStat .linkBtn { margin-left: 6px; color: var(--c); }
+@media (prefers-color-scheme: dark) { .star.on { background: #4a3a14; } .flH, .flD { color: #f0b46a; } }
