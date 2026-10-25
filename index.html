@@ -5,9 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#7a5c8e">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>MeguMiru（メグミル）</title>
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
-<link href="style.css?v=13" rel="stylesheet">
+<link href="style.css?v=14" rel="stylesheet">
 </head>
 <body>
 
@@ -110,6 +113,12 @@
     <p id="gpxStatus" class="note"></p>
     <p id="gpxCount" class="note"></p>
   </div>
+  <h3>ホーム画面のアプリ</h3>
+  <div class="card">
+    <p id="pwaStatus"></p>
+    <div class="btnRow"><button class="btn primary" id="btnInstall" type="button" hidden>ホーム画面に置く</button></div>
+    <p class="note" id="pwaHow">Chrome の右上の「︙」→「ホーム画面に追加」（または「アプリをインストール」）でも置けます。記録はこれまでと同じで、ホーム画面から開いても Chrome で開いても同じ記録を使います。記録するのは、これまでどおりアプリを開いている間だけです。</p>
+  </div>
   <h3>記録のバックアップ</h3>
   <div class="card">
     <p id="recCount"></p>
@@ -164,7 +173,7 @@
 
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
 <script src="config.js"></script>
-<script src="js/base.js?v=13"></script>
+<script src="js/base.js?v=14"></script>
 <script src="js/data.js?v=11"></script>
 <script src="js/rec.js?v=12"></script>
 <script src="js/map.js?v=13"></script>
@@ -175,8 +184,8 @@
 <script src="js/wiki.js?v=10"></script>
 <script src="js/plan.js?v=13"></script>
 <script src="js/flea.js?v=13.3"></script>
-<script src="js/ui.js?v=13"></script>
+<script src="js/ui.js?v=14"></script>
 <script src="js/help.js?v=1"></script>
-<script src="js/main.js?v=13"></script>
+<script src="js/main.js?v=14"></script>
 </body>
 </html>

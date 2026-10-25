@@ -284,3 +284,6 @@ a { color: var(--c); }
 .badge.flSt { background: #b8373d; }
 .flStat .linkBtn { margin-left: 6px; color: var(--c); }
 @media (prefers-color-scheme: dark) { .star.on { background: #4a3a14; } .flH, .flD { color: #f0b46a; } }
+
+/* 版14 */
+.btn[hidden] { display: none; }

@@ -1,0 +1,18 @@
+{
+  "id": "./",
+  "name": "MeguMiru（メグミル）",
+  "short_name": "MeguMiru",
+  "description": "行った場所で、駅・市区町村・道の駅・ミュージアム・史跡・路線を集める",
+  "lang": "ja",
+  "start_url": "./?src=home",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f3f8",
+  "theme_color": "#7a5c8e",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
