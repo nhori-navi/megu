@@ -1,4 +1,4 @@
-// ui.js：画面の切り替え・今日・設定（MeguMiru 版9：月のふりかえり・MichiMiru の記録・近づいたら知らせる）
+// ui.js：画面の切り替え・今日・設定（MeguMiru 版10：一言説明。版9：月のふりかえり・MichiMiru の記録・近づいたら知らせる）
 let curTab = 'map';
 
 function showTab(t) {
@@ -142,11 +142,12 @@ function renderToday() {
     const sh = SHELVES[r.s.sh];
     const k = e.k === 'new' ? 'はじめて' : e.k === 'up' ? LV_NAME[r.s.sh][e.lv] + 'に' : 'また来た';
     const lv = LV_NAME[r.s.sh][e.lv] + (r.e && e.lv === r.lv ? '・推定' : '');
-    return `<li class="row" data-id="${esc(e.id)}"><span class="time">${fmtTime(e.t)}</span><span class="dot" style="background:${sh.color}"></span>`
+    return `<li class="row" data-id="${esc(e.id)}"${e.k === 'new' && r.s.sh !== 'city' ? ' data-wiki="1"' : ''}><span class="time">${fmtTime(e.t)}</span><span class="dot" style="background:${sh.color}"></span>`
       + `<span class="nm">${esc(r.s.n)}<small>${r.s.sh === 'mu' || r.s.sh === 'hi' ? esc(r.s.sub) : sh.name}${lv && (r.s.sh === 'st' || r.s.sh === 'city') ? '・' + lv : ''}</small></span><span class="st"><span class="kind k-${e.k}">${k}</span></span></li>`;
   }).join('');
   $('todayList').innerHTML = rows ? `<ul class="list">${rows}</ul>` : '';
   $('todayList').querySelectorAll('.row').forEach(li => li.onclick = () => showSpot(li.dataset.id));
+  wikiRows($('todayList'));      // 版10：はじめての場所に一言説明
 }
 
 // ---------- 設定 ----------
@@ -168,6 +169,7 @@ function renderSettings() {
   $('recCount').textContent = `記録：${n}か所`;
   $('setMichi').checked = michiOn;
   $('setNear').checked = nearOn;
+  $('setWiki').checked = wikiOn;
   const ml = getLS('michilast', 0), mn = getLS('michin', 0);
   $('michiStatus').textContent = !michiOn ? '使っていません' : ml ? `${mn}件の記録を読んでいます（最後に読んだ：${fmtDate(ml)} ${fmtTime(ml)}）` : 'まだ MichiMiru の記録はありません';
   const gn = getLS('gpxcount', 0);
@@ -319,6 +321,7 @@ function wireUi() {
   $('monPrev').onclick = () => monthShift(-1);
   $('monNext').onclick = () => monthShift(1);
   $('setMichi').onchange = e => { michiOn = e.target.checked; setLS('michion', michiOn); if (michiOn) { michiSig = ''; runMichi(); } renderSettings(); };
+  $('setWiki').onchange = e => { wikiOn = e.target.checked; setLS('wikion', wikiOn); };
   $('setNear').onchange = e => { nearOn = e.target.checked; setLS('nearon', nearOn); if (!nearOn) hideNear(); };
   $('dayNext').onclick = () => moveDay(1);
   $('btnHelp').onclick = () => showIntro(true);

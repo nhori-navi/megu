@@ -1,4 +1,4 @@
-// main.js：起動（MeguMiru 版9）
+// main.js：起動（MeguMiru 版10）
 async function boot() {
   wireUi();
   wireIntro();
@@ -27,6 +27,8 @@ async function boot() {
     if (s === 'fail') toast(`${PREF_NAME[pc]}のデータを読み込めませんでした：${msg}`, 4500);
     if (curTab === 'set') renderSettings();
   };
+  // 版10：名城の一覧（毎月作り直すファイル）。読めたら札を付け直す
+  loadMeijo().then(() => { if (applyMeijo()) onSpotsChanged(); else if (curTab === 'zukan') renderZukan(); });
   onFix = (fix, err) => { updRecPill(err); mapOnFix(fix); updHere(); nearCheck(fix); };
   wireNear();
 

@@ -1,4 +1,4 @@
-// data.js：市区町村の境界と、都県ごとの場所データ（MeguMiru 版7）
+// data.js：市区町村の境界と、都県ごとの場所データ（MeguMiru 版10）
 
 // Overpass（OpenStreetMap のデータを取り出す窓口）。上から順に頼む
 const OVP_SERVERS = [
@@ -9,7 +9,7 @@ const OVP_SERVERS = [
 const OVP_LIMIT = 70000;       // 1か所あたりの待ち時間（ミリ秒）
 const PREF_DAYS = 30;          // 都県のデータを取り直すまでの日数（用意したファイルは毎月作り直す）
 const PREF_DV = 2;             // 保存データの形の番号（版1で保存した分は取り直す）
-const DATA_REV = 4;            // 振り分け方の番号（版6で 3：城跡から御所・宮邸などを外し、遺跡の城跡を拾う／版7で 4：地下駅の印 u）。古いファイルは1日おきに取り直しを試す
+const DATA_REV = 5;            // 振り分け方の番号（版6で 3：城跡から御所・宮邸などを外し、遺跡の城跡を拾う／版7で 4：地下駅の印 u／版10で 5：遺構と城跡公園も城跡に）。古いファイルは1日おきに取り直しを試す
 const PREF_RETRY_MIN = 3;      // 失敗したら、自動で頼み直すまでの分
 
 let CITY = [];                 // [{c, p, n, g, bb}]  c=コード, p=都県名, n=名前, g=境界, bb=囲む四角
@@ -107,6 +107,9 @@ function classify(tags) {
     if (['palace', 'manor', 'stately'].includes(tags.castle_type) || NOT_CASTLE.test(name)) return null;
     return ['hi', '城跡'];
   }
+  // 版10：遺構（historic=ruins）で名前に「城」があるもの、名前が「〇〇城跡（城址）公園」などの公園
+  if (tags.historic === 'ruins' && /城|砦|陣屋/.test(name)) return ['hi', '城跡'];
+  if (tags.leisure === 'park' && /城(跡|址)/.test(name)) return ['hi', '城跡'];
   // 遺跡として登録されている城跡（例：滝山城跡）
   if (tags.historic === 'archaeological_site'
       && (tags.site_type === 'fortification' || tags.archaeological_site === 'fortification' || /城(跡|址)$|城$|砦(跡|址)?$|陣屋(跡|址)?$/.test(name))
@@ -133,6 +136,7 @@ function isUnder(tags) {
 function parseOsm(js, pc) {
   const out = [];
   const byName = new Map();
+  const weak = new Set();
   for (const el of (js.elements || [])) {
     const tags = el.tags || {};
     const k = classify(tags);
@@ -159,11 +163,22 @@ function parseOsm(js, pc) {
     };
     if (tags.wikipedia) s.w = tags.wikipedia;
     if (under) s.u = 1;
+    if (sh === 'hi' && tags.historic !== 'castle' && !(tags.historic === 'archaeological_site' && tags.site_type === 'fortification')
+      && (tags.historic === 'ruins' || tags.leisure === 'park')) weak.add(s);
     out.push(s);
     if (!byName.has(key)) byName.set(key, []);
     byName.get(key).push(s);
   }
-  return out;
+  // 版10：遺構・城跡公園から拾った城跡は、近く（600m以内）にほかの城跡があれば重ねない
+  if (!weak.size) return out;
+  const strong = out.filter(s => s.sh === 'hi' && s.sub === '城跡' && !weak.has(s));
+  const kept = [];
+  return out.filter(s => {
+    if (!weak.has(s)) return true;
+    if (strong.some(o => dist(o.x, o.y, s.x, s.y) < 600) || kept.some(o => dist(o.x, o.y, s.x, s.y) < 600)) return false;
+    kept.push(s);
+    return true;
+  });
 }
 
 // 版4：都県の境界（area）で絞ると重すぎる（東京都は小笠原まで含む）ので、約50km四方のマスごとに問い合わせる
@@ -296,6 +311,7 @@ function spotsNear(x, y, r) {
 function setPrefSpots(pc, list) {
   for (const [id, s] of SPOTS) if (s.p === pc) SPOTS.delete(id);
   for (const s of list) SPOTS.set(s.id, s);
+  applyMeijo(false);        // 版10：名城の札
   gridRebuild();
 }
 
@@ -319,6 +335,7 @@ async function restorePrefs() {
       }
     } catch (e) { /* 読めなければ取り直す */ }
   }
+  applyMeijo(false);
   gridRebuild();
 }
 
@@ -520,3 +537,60 @@ async function ensurePrefs(pcs, onWait) {
     }
   }
 }
+
+
+// ---------- 版10：名城（日本100名城・続日本100名城のうち関東甲信越の41城） ----------
+// data/meijo.json = {v, t, list:[{no, n, p, x, y, id}]}  id＝合わせた場所データの番号（なければ null。そのときはこのアプリで場所を補う）
+let MEIJO = [];
+const MEIJO_BY = new Map();     // 場所の番号 → 名城
+function setMeijo(js) {
+  MEIJO = (js && js.list) || [];
+}
+async function loadMeijo() {
+  try {
+    const c = await DB.get('meijo');
+    if (c && c.js) { setMeijo(c.js); if (Date.now() - c.ft < PREF_DAYS * 86400000) return; }
+  } catch (e) { /* 取り直す */ }
+  const day = ymd(Date.now()).replace(/-/g, '');
+  for (const base of DATA_SRC) {
+    try {
+      const res = await fetch(base + 'meijo.json?d=' + day, { cache: 'no-cache' });
+      if (!res.ok) continue;
+      const js = await res.json();
+      if (!js || !Array.isArray(js.list) || !js.list.length) continue;
+      setMeijo(js);
+      try { await DB.set('meijo', { ft: Date.now(), js }); } catch (e) { /* 保存できなくても使う */ }
+      return;
+    } catch (e) { /* 次へ */ }
+  }
+}
+// 読み込み済みの都県について、名城の札を付ける。場所データにない名城は、その都県を読み込んだあとで補う（番号 jm＋番号）
+function applyMeijo(rebuild = true) {
+  MEIJO_BY.clear();
+  let changed = false;
+  for (const m of MEIJO) {
+    const sid = 'jm' + m.no;
+    const s = m.id && SPOTS.get(m.id);
+    if (s) {
+      s.mj = m.no; MEIJO_BY.set(s.id, m);
+      if (SPOTS.has(sid)) { SPOTS.delete(sid); changed = true; }
+    } else if (PREF_META[m.p] && m.x != null) {
+      if (!SPOTS.has(sid)) { SPOTS.set(sid, { id: sid, sh: 'hi', sub: '城跡', n: m.n, x: m.x, y: m.y, p: m.p, mj: m.no }); changed = true; }
+      MEIJO_BY.set(sid, m);
+    }
+  }
+  if (changed && rebuild) gridRebuild();
+  return changed;
+}
+function meijoLabel(no) { return no >= 101 ? `続100名城 No.${no}` : `100名城 No.${no}`; }
+// 名城の記録は、場所データの番号か補った番号（jm）のどちらかに付く
+function meijoIds(m) { return m.id ? [m.id, 'jm' + m.no] : ['jm' + m.no]; }
+function meijoOf(id) {
+  if (MEIJO_BY.has(id)) return MEIJO_BY.get(id);
+  return MEIJO.find(m => m.id === id || 'jm' + m.no === id) || null;
+}
+function meijoMainId(m) {
+  const ids = meijoIds(m);
+  return ids.find(id => REC[id]) || ids.find(id => SPOTS.has(id)) || ids[0];
+}
+function meijoLv(m) { return Math.max(...meijoIds(m).map(id => (REC[id] ? REC[id].lv : 0))); }
