@@ -1,4 +1,4 @@
-// michi.js：MichiMiru の歩いた記録を、そのまま読んで判定する（MeguMiru 版9）
+// michi.js：MichiMiru の歩いた記録を、そのまま読んで判定する（MeguMiru 版9。版11：乗った区間の拾い直し segOnly）
 // ・MichiMiru は同じアドレス（nhori-navi.github.io）の端末内の置き場 'walk_tracks' に記録を保存している。それを読むだけで、MichiMiru 側は何も変えない
 // ・記録の形：{k:'walk'|'veh', t0:始めた時刻, t1:終えた時刻, pts:[[経度,緯度],…], mode:'train'|'car'（手で直したとき）, src:GPX のファイル名}
 //   点ごとの時刻はないので、始めと終わりの時刻を距離で割り振る
@@ -49,15 +49,22 @@ function michiKind(t) {
 function michiPoint(kind, p, ctx) {
   const o = { ctx };
   for (const [s, d] of spotsNear(p.x, p.y, Math.max(RULE.stU, RULE.castle))) {
+    if (ctx.segOnly && s.sh !== 'st') continue;
     if (s.sh === 'st') {
       if (kind === 'car' || d > (s.u ? RULE.stU : RULE.st)) continue;
       mark(s.id, kind === 'walk' ? 2 : 1, spotSnap(s), p.t, o);
+      if (kind === 'veh' && (!o.near || d < o.near[1])) o.near = [s.id, d];   // 版11：乗った区間（乗り物の記録だけ）
     } else if (s.sh === 'mi') {
-      if (d <= RULE.mi) mark(s.id, 2, spotSnap(s), p.t, o);
+      // 版11：歩きの記録は「訪問」、乗り物の記録は「通過」
+      if (d <= RULE.mi) mark(s.id, kind === 'walk' ? 2 : 1, spotSnap(s), p.t, o);
+    } else if (s.sh === 'mu') {
+      if (d <= RULE.mu) mark(s.id, 1, spotSnap(s), p.t, o);   // 前を通った（とどまったかは散歩の間で見る）
     } else if (s.sh === 'hi') {
-      if (d <= (s.sub === '古墳' ? RULE.kofun : RULE.castle)) mark(s.id, 2, spotSnap(s), p.t, o);
+      if (d <= (s.sub === '古墳' ? RULE.kofun : RULE.castle)) mark(s.id, kind === 'walk' ? 2 : 1, spotSnap(s), p.t, o);
     }
   }
+  if (o.near) segObserve(o.near[0], p.t, ctx, true);
+  if (ctx.segOnly) return;
   const c = cityAt(p.x, p.y);
   if (c) mark('c' + c.c, kind === 'walk' ? 2 : 1, { n: c.n, sh: 'city', sub: '市区町村', x: Math.round(p.x * 1e3) / 1e3, y: Math.round(p.y * 1e3) / 1e3, p: c.c.slice(0, 2) }, p.t, o);
 }
@@ -72,21 +79,23 @@ function michiMuseumGap(a, b, ctx) {
   }
 }
 
-async function michiSync(onStatus) {
+// opt.segOnly：これまでの記録を全部読み直して、乗った区間だけを拾う（版11を入れたときに1回）
+async function michiSync(onStatus, opt) {
+  const segOnly = !!(opt && opt.segOnly);
   if (!michiOn || michiBusy) return null;
   const { raw, tracks } = michiRead();
   const sig = raw.length + '|' + raw.slice(-64);
-  if (sig === michiSig) return null;                      // 前に読んだときから変わっていない
+  if (!segOnly && sig === michiSig) return null;          // 前に読んだときから変わっていない
   michiBusy = true;
   const res = { tracks: 0, points: 0, count: { new: 0, up: 0, again: 0, est: 0 }, from: null, to: null };
   try {
     const done = (await DB.get('michidone')) || {};
     const ongoing = michiOngoing();
     const list = tracks.filter(t => t && Array.isArray(t.pts) && t.pts.length && Number.isFinite(t.t0)).sort((a, b) => a.t0 - b.t0);
-    const unread = list.filter(t => (done[michiKey(t)] || 0) < t.pts.length);
+    const unread = segOnly ? list : list.filter(t => (done[michiKey(t)] || 0) < t.pts.length);
     const todo = unread.filter(t => !(t.k !== 'veh' && t.t0 === ongoing));
     const waiting = todo.length < unread.length;           // 歩いている途中の記録がある（終わってから読む）
-    if (!todo.length) { if (!waiting) michiSig = sig; return res; }
+    if (!todo.length) { if (!waiting && !segOnly) michiSig = sig; return res; }
 
     // 通った都県のデータと路線を用意する
     const pcs = new Set();
@@ -97,13 +106,13 @@ async function michiSync(onStatus) {
     await ensurePrefs([...pcs], pc => onStatus && onStatus(`${PREF_NAME[pc]}のデータを読み込んでいます…`));
     if (!LINES.length) await loadLines();
 
-    const ctx = newJudgeCtx({ quiet: true, count: res.count });
+    const ctx = newJudgeCtx({ quiet: true, count: res.count, segOnly });
     const todoSet = new Set(todo);
     let prev = null, prevT = null;
     for (const t of list) {
       const pts = michiTimed(t), kind = michiKind(t);
       if (todoSet.has(t)) {
-        const from = Math.max(0, (done[michiKey(t)] || 0) - 1);
+        const from = segOnly ? 0 : Math.max(0, (done[michiKey(t)] || 0) - 1);
         const step = kind === 'walk' ? 12 : 30;     // 長い記録でも重くならないよう、近すぎる点は飛ばして判定する
         let lastJ = null;
         for (let i = from; i < pts.length; i++) {
@@ -115,7 +124,7 @@ async function michiSync(onStatus) {
           if (res.from == null || pts[i].t < res.from) res.from = pts[i].t;
           if (res.to == null || pts[i].t > res.to) res.to = pts[i].t;
         }
-        done[michiKey(t)] = t.pts.length;
+        if (!segOnly) done[michiKey(t)] = t.pts.length;
         res.tracks++;
       }
       // 記録と記録の間（どちらかが今回読んだ記録のとき）
@@ -129,6 +138,7 @@ async function michiSync(onStatus) {
     }
     LOG.sort((a, b) => a.t - b.t);
     saveRec();
+    if (segOnly) return res;
     // 消えた記録の分は覚えておかない
     const keys = new Set(list.map(michiKey));
     for (const k of Object.keys(done)) if (!keys.has(k)) delete done[k];

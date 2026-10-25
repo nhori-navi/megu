@@ -1,4 +1,4 @@
-// main.js：起動（MeguMiru 版10）
+// main.js：起動（MeguMiru 版11）
 async function boot() {
   wireUi();
   wireIntro();
@@ -10,9 +10,11 @@ async function boot() {
   }
   await loadRec();
   await restorePrefs();
-  loadLines();                       // 路線（途切れた間の駅の推定に使う）。待たずに裏で
+  // 路線（途切れた間の駅の推定・乗った区間に使う）と線路の形。待たずに裏で
+  loadLines().then(() => { if (curTab === 'zukan') renderZukan(); }).then(loadRails).then(() => refreshRides());
 
   onSpotsChanged = () => { refreshSpots(); if (curTab === 'zukan') renderZukan(); };
+  onSegChanged = () => { refreshRides(); if (curTab === 'zukan' && zkShelf === 'ln') renderZukan(); };
   onRecChanged = (id) => {
     if (id[0] === 'c') refreshCity(); else refreshSpots();
     if (curTab === 'today') renderToday();

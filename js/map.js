@@ -1,8 +1,8 @@
-// map.js：地図（MeguMiru 版8.1：まだの所は薄い丸、行った所は塗りつぶしのピン、通過は白抜きのピン、推定の通過は点線の白抜き）
+// map.js：地図（MeguMiru 版11：乗った区間を線路の形で。版8.1：まだの所は薄い丸、行った所は塗りつぶしのピン、通過は白抜きのピン、推定の通過は点線の白抜き）
 let map = null;
 let mapReady = false;
 let follow = true;
-let filt = Object.assign({ st: true, city: true, mi: true, mu: true, hi: true }, getLS('filter', {}));
+let filt = Object.assign({ st: true, city: true, mi: true, mu: true, hi: true, ln: true }, getLS('filter', {}));
 const LOAD_ZOOM = 9;   // これより近づいたら、画面に入った都県のデータを読み込む
 
 // ピンの絵を描いて地図に登録する
@@ -75,6 +75,7 @@ function setupLayers() {
   map.addSource('city', { type: 'geojson', data: cityGeo() });
   map.addSource('spots', { type: 'geojson', data: spotsGeo() });
   map.addSource('me', { type: 'geojson', data: meGeo() });
+  map.addSource('rides', { type: 'geojson', data: ridesGeo() });
   map.addLayer({
     id: 'city-fill', type: 'fill', source: 'city', slot: 'middle',
     paint: { 'fill-color': cityColorExpr(), 'fill-emissive-strength': 1 }
@@ -82,6 +83,17 @@ function setupLayers() {
   map.addLayer({
     id: 'city-line', type: 'line', source: 'city', slot: 'middle', minzoom: 8,
     paint: { 'line-color': 'rgba(122,92,142,0.45)', 'line-width': 0.7, 'line-emissive-strength': 1 }
+  });
+  // 版11：乗った区間（線路の形が取れた所だけ）。推定は点線
+  map.addLayer({
+    id: 'rides', type: 'line', source: 'rides', slot: 'middle', filter: ['!=', ['get', 'e'], 1],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': SHELVES.ln.color, 'line-width': ['interpolate', ['linear'], ['zoom'], 7, 1.6, 12, 3.5, 16, 6], 'line-opacity': 0.85, 'line-emissive-strength': 1 }
+  });
+  map.addLayer({
+    id: 'rides-est', type: 'line', source: 'rides', slot: 'middle', filter: ['==', ['get', 'e'], 1],
+    layout: { 'line-join': 'round' },
+    paint: { 'line-color': SHELVES.ln.color, 'line-width': ['interpolate', ['linear'], ['zoom'], 7, 1.4, 12, 3, 16, 5], 'line-opacity': 0.75, 'line-dasharray': [1.5, 1.2], 'line-emissive-strength': 1 }
   });
   addPinImages();
   // まだ行っていない所：薄い小さな丸（どの縮尺でも）
@@ -148,6 +160,27 @@ function spotsGeo() {
   return { type: 'FeatureCollection', features: feats };
 }
 
+function ridesGeo() {
+  const feats = [];
+  for (const [k, r] of Object.entries(SEG)) {
+    const c = railCoords(k);
+    if (c) feats.push({ type: 'Feature', properties: { k, e: r.e ? 1 : 0 }, geometry: { type: 'LineString', coordinates: c } });
+  }
+  return { type: 'FeatureCollection', features: feats };
+}
+function refreshRides() {
+  if (!mapReady) return;
+  map.getSource('rides').setData(ridesGeo());
+}
+// 点がみんな入るように地図を動かす
+function fitPoints(pts) {
+  if (!mapReady || !pts.length) return;
+  setFollow(false);
+  let w = 180, s = 90, e = -180, n = -90;
+  for (const [x, y] of pts) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
+  map.fitBounds([[w, s], [e, n]], { padding: 50, maxZoom: 14, duration: 900 });
+}
+
 function meGeo() {
   if (!lastFix) return { type: 'FeatureCollection', features: [] };
   return { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [lastFix.x, lastFix.y] } }] };
@@ -189,6 +222,9 @@ function applyFilter() {
   const vis = filt.city ? 'visible' : 'none';
   map.setLayoutProperty('city-fill', 'visibility', vis);
   map.setLayoutProperty('city-line', 'visibility', vis);
+  const lv = filt.ln ? 'visible' : 'none';
+  map.setLayoutProperty('rides', 'visibility', lv);
+  map.setLayoutProperty('rides-est', 'visibility', lv);
 }
 
 function setFollow(v) {

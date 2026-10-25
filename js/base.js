@@ -1,5 +1,5 @@
-// base.js：共通の定数と道具（MeguMiru 版9）
-const APP_VER = 10;
+// base.js：共通の定数と道具（MeguMiru 版11）
+const APP_VER = 11;
 
 // 5つの棚
 const SHELVES = {
@@ -7,9 +7,11 @@ const SHELVES = {
   city: { name: '市区町村',   icon: '🗾', color: '#7a5c8e' },
   mi:   { name: '道の駅',     icon: '🛣️', color: '#2f8f5b' },
   mu:   { name: 'ミュージアム', icon: '🏛️', color: '#c0782f' },
-  hi:   { name: '史跡',       icon: '🏯', color: '#8b5e3c' }
+  hi:   { name: '史跡',       icon: '🏯', color: '#8b5e3c' },
+  ln:   { name: '路線',       icon: '🚃', color: '#c2416b' }      // 版11：路線の乗りつぶし（場所ではなく区間を集める）
 };
-const SHELF_ORDER = ['st', 'city', 'mi', 'mu', 'hi'];
+const SHELF_ORDER = ['st', 'city', 'mi', 'mu', 'hi'];   // 場所の棚
+const ZK_ORDER = ['st', 'city', 'mi', 'mu', 'hi', 'ln'];  // 図鑑と地図の切り替えに出す棚
 
 // 対象の10都県（コードは都道府県番号）
 const PREFS = [
@@ -39,11 +41,15 @@ const RULE = {
   // 版7（C）「いまここ」：最後の位置が10分以内・精度500m以内で、そこから500m以内
   hereMin: 10, hereAcc: 500, hereR: 500,
   // 版9 近づいたら知らせる：400m以内、秒速4m（時速約14km）まで、位置の精度100m以内、同じ場所は12時間に1回
-  nearR: 400, nearSpd: 4, nearAcc: 100, nearAgain: 12
+  nearR: 400, nearSpd: 4, nearAcc: 100, nearAgain: 12,
+  // 版11 道の駅・ミュージアム・史跡も「通過」：秒速4m（時速約14km）より速いと通過
+  walkSpd: 4,
+  // 版11 乗った区間：隣り合う駅を15分以内に続けて、平均の速さが秒速5m以上
+  segMin: 15
 };
 
 // 記録の段階
-const LV_NAME = { st: ['', '通過', '降車'], city: ['', '通過', '訪問'], mi: ['', '', '訪問'], mu: ['', '', '訪問'], hi: ['', '', '訪問'] };
+const LV_NAME = { st: ['', '通過', '降車'], city: ['', '通過', '訪問'], mi: ['', '通過', '訪問'], mu: ['', '通過', '訪問'], hi: ['', '通過', '訪問'] };
 
 const $ = id => document.getElementById(id);
 

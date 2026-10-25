@@ -1,10 +1,12 @@
-// rec.js：位置の記録と「訪れた」の判定（MeguMiru 版7）
+// rec.js：位置の記録と「訪れた」の判定（MeguMiru 版11：道の駅・ミュージアム・史跡も「通過」、乗った区間）
 // 版7：地下の駅は判定をゆるめる（A）／位置が途切れた間に通った駅を路線から推定する（B）／「いまここ」で記録（C）／GPX の読み込みにも使う
 
 let REC = {};      // 場所の番号 → {lv, f, l, n, d, ds, s, e, h}
                    //   lv=段階, f=初めて, l=最後, n=行った日数, d=最後の日, ds=行った日の一覧（yyyymmdd）, s=場所の控え
                    //   e=1 推定（路線から）, h=1 「いまここ」で記録
 let LOG = [];      // [{t, id, lv, k}]  k: new=初めて / up=段階が上がった / again=別の日にまた
+let SEG = {};      // 版11：乗った区間「駅の番号|駅の番号」（番号の小さい方が先）→ {f:初めて, l:最後, e:1 推定}
+let onSegChanged = () => {};
 let recOn = getLS('recon', true);
 let watchId = null;
 let lastFix = null;          // {x, y, acc, t, spd}
@@ -15,7 +17,7 @@ let wakeLock = null;
 
 // 判定の途中の状態（アプリで記録しているときの分。GPX の読み込みは別に作る）
 function newJudgeCtx(opt) {
-  return Object.assign({ stay: {}, good: null, quiet: false, gpx: false, count: { new: 0, up: 0, again: 0, est: 0 } }, opt || {});
+  return Object.assign({ stay: {}, good: null, quiet: false, gpx: false, lastSt: null, segOnly: false, count: { new: 0, up: 0, again: 0, est: 0, seg: 0 } }, opt || {});
 }
 const liveCtx = newJudgeCtx();
 
@@ -23,7 +25,8 @@ async function loadRec() {
   try {
     REC = (await DB.get('rec')) || {};
     LOG = (await DB.get('log')) || [];
-  } catch (e) { REC = {}; LOG = []; }
+    SEG = (await DB.get('seg')) || {};
+  } catch (e) { REC = {}; LOG = []; SEG = {}; }
 }
 
 let saveTimer = null;
@@ -33,6 +36,7 @@ function saveRec() {
     try {
       await DB.set('rec', REC);
       await DB.set('log', LOG);
+      await DB.set('seg', SEG);
     } catch (e) { toast('記録を保存できませんでした'); }
   }, 800);
 }
@@ -48,6 +52,7 @@ const dayNum = t => +ymd(t).replace(/-/g, '');
 function mark(id, lv, snap, now, opt) {
   opt = opt || {};
   const ctx = opt.ctx || liveCtx;
+  if (ctx.segOnly) return null;                  // 乗った区間だけを拾い直しているとき
   const day = dayNum(now);
   const r = REC[id];
   let ev = null;
@@ -89,7 +94,7 @@ function announce(id, ev) {
   const r = REC[id];
   const sh = SHELVES[r.s.sh];
   const lvName = LV_NAME[r.s.sh][r.lv] + (r.e ? '・推定' : '');
-  if (ev === 'new') toast(sh.icon + ' はじめて：' + r.s.n + (lvName && (r.s.sh === 'st' || r.s.sh === 'city') ? '（' + lvName + '）' : ''), 4000);
+  if (ev === 'new') toast(sh.icon + ' はじめて：' + r.s.n + (lvName && (r.s.sh !== 'mi' && r.s.sh !== 'mu' && r.s.sh !== 'hi' || r.lv === 1) ? '（' + lvName + '）' : ''), 4000);
   else if (ev === 'up') toast(sh.icon + ' ' + r.s.n + '：' + lvName + 'になりました', 3500);
   else if (ev === 'again') toast(sh.icon + ' また来ました：' + r.s.n, 3000);
 }
@@ -104,33 +109,89 @@ function stayAdd(ctx, id, now) {
   return st.ms / 1000;
 }
 
+const slowOf = spd => spd != null && spd <= RULE.walkSpd;
+
+// ---------- 版11：乗った区間 ----------
+function segRide(k, t, est, ctx) {
+  const r = SEG[k];
+  if (!r) {
+    SEG[k] = { f: t, l: t };
+    if (est) SEG[k].e = 1;
+    if (ctx && ctx.count) ctx.count.seg = (ctx.count.seg || 0) + 1;
+  } else {
+    if (est && !r.e) { if (t < r.f) r.f = t; return; }
+    if (!est && r.e) delete r.e;               // 本当に通ったら推定ではなくなる
+    if (t < r.f) r.f = t;
+    if (t > r.l) r.l = t;
+  }
+  saveRec();
+  if (!ctx || !ctx.quiet) onSegChanged(k);
+}
+// いちばん近い駅のまわりにいたことを伝える。前の駅から15分以内に次の駅へ、その間の速さが乗り物なら、区間を「乗った」にする
+//   速さ：前の駅を最後に見てからの位置の速さのいちばん大きいもの（速さが分からなければ駅と駅の距離÷時間）
+//   ride：MichiMiru の記録のように、乗り物かどうかが分かっているとき（true＝乗り物）
+//   同じ駅のまわりで止まっているか歩いている間は、速さを数え直す（電車で着いて、歩いて隣の駅へ行ったときに数えないため）
+function segObserve(id, t, ctx, ride, spd) {
+  if (!LINE_EDGE.size || !LINE_ST[id]) return;
+  const last = ctx.lastSt, vmax = ctx.segMax;
+  const keep = spd != null && spd > RULE.walkSpd ? spd : null;
+  ctx.lastSt = { id, t };
+  if (last && last.id === id) { if (keep == null) ctx.segMax = null; return; }
+  ctx.segMax = keep;
+  if (!last) return;
+  const dt = (t - last.t) / 1000;
+  if (dt <= 0 || dt > RULE.segMin * 60) return;
+  const a = LINE_ST[last.id], b = LINE_ST[id];
+  const fast = ride != null ? ride : vmax != null ? vmax >= RULE.stPassSpeed : dist(a[1], a[2], b[1], b[2]) / dt >= RULE.stPassSpeed;
+  if (!fast) return;                              // 歩いて隣の駅へ、などは数えない
+  const k = ekey(last.id, id);
+  if (LINE_EDGE.has(k)) { segRide(k, t, false, ctx); return; }
+  // 隣ではない（途中の駅で位置が取れなかった）：路線で結べれば、その間は推定
+  const p = linePath(last.id, id);
+  if (p && p.length <= 8) segPath(p, last.t, t, ctx);
+}
+function segPath(p, t0, t1, ctx) {
+  for (let i = 1; i < p.length; i++) {
+    const k = ekey(p[i - 1], p[i]);
+    if (LINE_EDGE.has(k)) segRide(k, Math.round(t0 + (t1 - t0) * i / (p.length - 1)), true, ctx);
+  }
+}
+function segCount() { return Object.keys(SEG).length; }
+
 // 1回の位置ごとの判定
 function judge(x, y, acc, spd, now, ctx) {
   ctx = ctx || liveCtx;
   if (acc > RULE.maxAccU) return;
   const roughOnly = acc > RULE.maxAcc;     // 位置が粗いときは地下の駅だけ見る（A）
   const inside = new Set();
+  if (spd != null) ctx.segMax = Math.max(ctx.segMax || 0, spd);
+  let nearSt = null, nearD = Infinity;
   for (const [s, d] of spotsNear(x, y, Math.max(RULE.stU, 250))) {
     if (roughOnly && !(s.sh === 'st' && s.u)) continue;
     const o = { ctx };
     if (s.sh === 'st') {
       if (d > (s.u ? RULE.stU : RULE.st)) continue;
       inside.add(s.id);
+      if (d < nearD) { nearD = d; nearSt = s.id; }
       if (spd != null && spd >= RULE.stPassSpeed) mark(s.id, 1, spotSnap(s), now, o);
       else if (spd == null || spd <= RULE.stSlowSpeed) {
         if (stayAdd(ctx, s.id, now) >= RULE.stStay) mark(s.id, 2, spotSnap(s), now, o);
       } else if (ctx.stay[s.id]) ctx.stay[s.id].t = now;   // 中くらいの速さの間は数えない
     } else if (s.sh === 'mi') {
-      if (d <= RULE.mi) mark(s.id, 2, spotSnap(s), now, o);
+      // 版11：乗り物の速さ（速さが分からないときも）は「通過」、止まっているか歩く速さなら「訪問」
+      if (d <= RULE.mi) mark(s.id, slowOf(spd) ? 2 : 1, spotSnap(s), now, o);
     } else if (s.sh === 'mu') {
       if (d > RULE.mu) continue;
+      mark(s.id, 1, spotSnap(s), now, o);           // 前を通っただけでも「通過」
+      if (spd != null && spd > RULE.walkSpd) continue;   // 乗り物の速さの間は数えない（速さが分からない間は数える：GPX で止まっている間は点が少ない）
       inside.add(s.id);
       if (stayAdd(ctx, s.id, now) >= RULE.muStay) mark(s.id, 2, spotSnap(s), now, o);
     } else if (s.sh === 'hi') {
       const r = s.sub === '古墳' ? RULE.kofun : RULE.castle;
-      if (d <= r) mark(s.id, 2, spotSnap(s), now, o);
+      if (d <= r) mark(s.id, slowOf(spd) ? 2 : 1, spotSnap(s), now, o);
     }
   }
+  if (nearSt) segObserve(nearSt, now, ctx, undefined, spd);       // 版11：乗った区間
   // 範囲から出たら、とどまった時間は数え直し
   for (const id of Object.keys(ctx.stay)) if (!inside.has(id)) delete ctx.stay[id];
   if (roughOnly) return;
@@ -167,6 +228,8 @@ function inferRide(a, b, ctx) {
     const t = Math.round(a.t + (b.t - a.t) * (best.length > 1 ? i / (best.length - 1) : 0));
     mark(id, 1, { n: v[0], sh: 'st', sub: '駅', x: v[1], y: v[2], p: v[3] }, t, { est: true, ctx });
   });
+  segPath(best, a.t, b.t, ctx);                   // 版11：その間の区間も推定で
+  ctx.lastSt = { id: best[best.length - 1], t: b.t };
 }
 
 function onPos(p) {
@@ -245,9 +308,19 @@ document.addEventListener('visibilitychange', updWake);
 // 段階：0=まだ, 1=通過, 2=訪問・降車
 function lvOf(id) { const r = REC[id]; return r ? r.lv : 0; }
 
+// 版11：記録を消す（まちがって付いた記録のため。手で付け足すことはできない）
+function deleteRec(id) {
+  if (!REC[id]) return false;
+  delete REC[id];
+  LOG = LOG.filter(e => e.id !== id);
+  saveRec();
+  onRecChanged(id, 'del');
+  return true;
+}
+
 // ---------- バックアップ ----------
 function backupData() {
-  return { app: 'MeguMiru', kind: 'all', v: 1, t: Date.now(), rec: REC, log: LOG };
+  return { app: 'MeguMiru', kind: 'all', v: 1, t: Date.now(), rec: REC, log: LOG, seg: SEG };
 }
 
 function mergeBackup(js) {
@@ -269,6 +342,13 @@ function mergeBackup(js) {
   }
   const seen = new Set(LOG.map(e => e.t + '|' + e.id));
   for (const e of (js.log || [])) if (e && !seen.has(e.t + '|' + e.id)) LOG.push(e);
+  for (const [k, r] of Object.entries(js.seg || {})) {
+    if (!r || !r.f) continue;
+    const m = SEG[k];
+    if (!m) { SEG[k] = r; continue; }
+    m.f = Math.min(m.f, r.f); m.l = Math.max(m.l, r.l || r.f);
+    if (!r.e) delete m.e;
+  }
   LOG.sort((a, b) => a.t - b.t);
   saveRec();
   return add;

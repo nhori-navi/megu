@@ -1,4 +1,4 @@
-// data.js：市区町村の境界と、都県ごとの場所データ（MeguMiru 版10）
+// data.js：市区町村の境界と、都県ごとの場所データ（MeguMiru 版11：路面電車の停留場・まとめた路線・線路の形）
 
 // Overpass（OpenStreetMap のデータを取り出す窓口）。上から順に頼む
 const OVP_SERVERS = [
@@ -9,7 +9,7 @@ const OVP_SERVERS = [
 const OVP_LIMIT = 70000;       // 1か所あたりの待ち時間（ミリ秒）
 const PREF_DAYS = 30;          // 都県のデータを取り直すまでの日数（用意したファイルは毎月作り直す）
 const PREF_DV = 2;             // 保存データの形の番号（版1で保存した分は取り直す）
-const DATA_REV = 5;            // 振り分け方の番号（版6で 3：城跡から御所・宮邸などを外し、遺跡の城跡を拾う／版7で 4：地下駅の印 u／版10で 5：遺構と城跡公園も城跡に）。古いファイルは1日おきに取り直しを試す
+const DATA_REV = 6;            // 振り分け方の番号（版10で 5：遺構と城跡公園も城跡に／版11で 6：路面電車の停留場・路線のまとまりと線路の形）
 const PREF_RETRY_MIN = 3;      // 失敗したら、自動で頼み直すまでの分
 
 let CITY = [];                 // [{c, p, n, g, bb}]  c=コード, p=都県名, n=名前, g=境界, bb=囲む四角
@@ -93,6 +93,7 @@ function classify(tags) {
   if (!name) return null;
   if (tags.disused || tags.abandoned || tags['disused:railway'] || tags['abandoned:railway']) return null;
   if (tags.railway === 'station' || tags.railway === 'halt') return ['st', '駅'];
+  if (tags.railway === 'tram_stop') return ['st', '停留場'];       // 版11：路面電車（都電荒川線など）
   if (/^道の駅/.test(name) || ((tags.highway === 'rest_area' || tags.highway === 'services') && /道の駅/.test(name))) {
     const bad = ['parking', 'toilets', 'restaurant', 'fast_food', 'cafe', 'vending_machine', 'fuel', 'ice_cream'];
     if (tags.shop || bad.includes(tags.amenity) || tags.tourism === 'information' || tags.building === 'yes' && tags.amenity) return null;
@@ -123,7 +124,10 @@ function cleanList(list) {
   return list.filter(s => !(s.sh === 'hi' && s.sub === '城跡' && NOT_CASTLE.test(s.n)));
 }
 
-function stationName(n) { return /駅$/.test(n) ? n : n + '駅'; }
+function stationName(n, sub) {
+  if (sub === '停留場') return /(停留場|停留所|駅)$/.test(n) ? n : n + '停留場';
+  return /駅$/.test(n) ? n : n + '駅';
+}
 
 // 版7：地下の駅か（地下鉄の駅、地下にあると登録された駅）
 function isUnder(tags) {
@@ -147,7 +151,7 @@ function parseOsm(js, pc) {
     const [sh, sub] = k;
     const p = pc || prefOfPoint(x, y);
     if (!p) continue;                 // 10都県の外
-    const n = sh === 'st' ? stationName(tags.name) : tags.name;
+    const n = sh === 'st' ? stationName(tags.name, sub) : tags.name;
     const mergeM = sh === 'st' ? 400 : 300;
     const key = sh + '|' + n;
     const same = (byName.get(key) || []).find(s => dist(s.x, s.y, x, y) < mergeM);
@@ -190,6 +194,7 @@ function ovpTileQuery(t, timeout) {
 (
   node["railway"="station"]["name"];
   node["railway"="halt"]["name"];
+  node["railway"="tram_stop"]["name"];
   nwr["highway"="rest_area"]["name"~"道の駅"];
   nwr["highway"="services"]["name"~"道の駅"];
   nwr["tourism"="museum"]["name"];
@@ -421,16 +426,40 @@ function prefsInBounds(w, s, e, n) {
 
 
 // ---------- 版7：路線（地下鉄などで位置が途切れた間の駅を推定するため） ----------
-// data/lines.json = {v, r, t, st:{駅の番号:[名前, 経度, 緯度, 都県]}, lines:[{n:路線名, s:[駅の番号…]}]}
+// data/lines.json = {v, r, t, st:{駅の番号:[名前, 経度, 緯度, 都県]}, lines:[{n:路線名, s:[駅の番号…]}], g:[まとめた路線（版11）]}
 let LINES = [];
 const LINE_AT = new Map();     // 駅の番号 → [[路線の番号, 並びの位置], …]
 let LINE_ST = {};
 let LINE_META = null;
 const LINE_GRID = new Map();   // 0.01°のマス → 駅の番号（路線にある駅だけ）
 
+// 版11：まとめた路線 g:[{n:路線名, co:会社, c:[[駅の番号…]…]（駅の並び。枝分かれや環状はいくつかに分かれる）}]
+//   区間＝並びの隣り合う2駅。番号は ekey（番号の小さい方が先）
+let LINE_GROUPS = [];
+const LINE_EDGE = new Map();   // 区間 → [まとめた路線の番号…]
+const LINE_STG = new Map();    // 駅の番号 → [まとめた路線の番号…]
+const ekey = (a, b) => (a < b ? a + '|' + b : b + '|' + a);
+
 function setLines(js) {
   LINES = js.lines || [];
   LINE_ST = js.st || {};
+  LINE_GROUPS = js.g || [];
+  LINE_EDGE.clear(); LINE_STG.clear();
+  LINE_GROUPS.forEach((g, gi) => {
+    g.k = [];
+    const ss = new Set();
+    for (const ch of g.c) ch.forEach((id, i) => {
+      ss.add(id);
+      if (!i) return;
+      const k = ekey(ch[i - 1], id);
+      if (g.k.includes(k)) return;
+      g.k.push(k);
+      if (!LINE_EDGE.has(k)) LINE_EDGE.set(k, []);
+      LINE_EDGE.get(k).push(gi);
+    });
+    g.ss = [...ss];
+    for (const id of ss) { if (!LINE_STG.has(id)) LINE_STG.set(id, []); LINE_STG.get(id).push(gi); }
+  });
   LINE_AT.clear(); LINE_GRID.clear();
   LINES.forEach((ln, li) => ln.s.forEach((id, i) => {
     if (!LINE_AT.has(id)) LINE_AT.set(id, []);
@@ -470,6 +499,36 @@ async function loadLines() {
       return;
     } catch (e) { clearTimeout(tm); }
   }
+}
+
+// 版11：線路の形 data/rails.json = {v, r, t, k:{区間: [経度, 緯度, 差, 差…]（10万倍した整数。2点目からは前との差）}}
+let RAILS = {};
+async function loadRails() {
+  try {
+    const c = await DB.get('rails');
+    if (c && c.js) { RAILS = c.js.k || {}; if (Date.now() - c.ft < PREF_DAYS * 86400000 && (c.js.r || 1) >= DATA_REV) return; }
+  } catch (e) { /* 取り直す */ }
+  const day = ymd(Date.now()).replace(/-/g, '');
+  for (const base of DATA_SRC) {
+    try {
+      const res = await fetch(base + 'rails.json?d=' + day, { cache: 'no-cache' });
+      if (!res.ok) continue;
+      const js = await res.json();
+      if (!js || !js.k) continue;
+      RAILS = js.k;
+      const ft = (js.r || 1) < DATA_REV ? Date.now() - (PREF_DAYS - 1) * 86400000 : Date.now();
+      try { await DB.set('rails', { ft, js }); } catch (e) { /* 保存できなくても使う */ }
+      return;
+    } catch (e) { /* 次へ */ }
+  }
+}
+function railCoords(k) {
+  const v = RAILS[k];
+  if (!v) return null;
+  const out = [];
+  let x = 0, y = 0;
+  for (let i = 0; i + 1 < v.length; i += 2) { x += v[i]; y += v[i + 1]; out.push([x / 1e5, y / 1e5]); }
+  return out.length >= 2 ? out : null;
 }
 
 // その場所から r m 以内の、路線にある駅（近い順）

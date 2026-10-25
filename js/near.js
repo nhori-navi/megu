@@ -20,7 +20,7 @@ function nearCheck(fix) {
   if (fix.spd != null && fix.spd > RULE.nearSpd) return;          // 乗り物では知らせない
   const now = Date.now();
   const cands = spotsNear(fix.x, fix.y, RULE.nearR)
-    .filter(([s]) => s.sh !== 'st' && lvOf(s.id) === 0 && !(nearSeen[s.id] && now - nearSeen[s.id] < RULE.nearAgain * 3600000))
+    .filter(([s]) => s.sh !== 'st' && lvOf(s.id) < 2 && !(nearSeen[s.id] && now - nearSeen[s.id] < RULE.nearAgain * 3600000))
     .sort((a, b) => a[1] - b[1]);
   if (!cands.length) return;
   const [s, d] = cands[0];

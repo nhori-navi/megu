@@ -1,4 +1,4 @@
-// ui.js：画面の切り替え・今日・設定（MeguMiru 版10：一言説明。版9：月のふりかえり・MichiMiru の記録・近づいたら知らせる）
+// ui.js：画面の切り替え・今日・設定（MeguMiru 版11：路線の棚・乗った区間。版10：一言説明。版9：月のふりかえり・MichiMiru の記録・近づいたら知らせる）
 let curTab = 'map';
 
 function showTab(t) {
@@ -132,9 +132,11 @@ function renderToday() {
     const r = REC[e.id]; if (!r) continue;
     if (e.k === 'new') cnt[r.s.sh] = (cnt[r.s.sh] || 0) + 1;
   }
-  const sum = SHELF_ORDER.filter(k => cnt[k]).map(k => `${SHELVES[k].icon} ${SHELVES[k].name} ${cnt[k]}`).join('　');
-  $('todaySum').innerHTML = ev.length
-    ? `<p class="big">${label}のはじめて：${Object.values(cnt).reduce((a, b) => a + b, 0)}</p><p>${sum || 'はじめての場所はありません'}</p>`
+  const segN = Object.values(SEG).filter(r => ymd(r.f) === day).length;     // 版11：はじめて乗った区間
+  if (segN) cnt.ln = segN;
+  const sum = ZK_ORDER.filter(k => cnt[k]).map(k => `${SHELVES[k].icon} ${SHELVES[k].name} ${cnt[k]}${k === 'ln' ? '区間' : ''}`).join('　');
+  $('todaySum').innerHTML = ev.length || segN
+    ? `<p class="big">${label}のはじめて：${Object.entries(cnt).filter(([k]) => k !== 'ln').reduce((a, [, b]) => a + b, 0)}</p><p>${sum || 'はじめての場所はありません'}</p>`
     : (isToday ? '<p class="big">今日の記録はまだありません</p><p class="note">アプリを開いたまま出かけると、通った駅や入った市区町村がここに並びます。閉じていた間の分は、設定から GPX を読み込めます。</p>'
       : '<p class="big">この日の記録はありません</p>');
   const rows = ev.slice().reverse().map(e => {
@@ -246,12 +248,28 @@ function runMichi(delay) {
   clearTimeout(michiTimer);
   michiTimer = setTimeout(async () => {
     const r = await michiSync();
+    await segPassOnce();
     if (!r || !r.tracks) return;
     afterRecChanged();
     if (curTab === 'set') renderSettings();
     const c = r.count;
     if (c.new || c.up) toast(`🚶 MichiMiru の記録から：はじめて ${c.new}` + (c.est ? `（うち推定 ${c.est}）` : '') + (c.up ? `・段階が上がった ${c.up}` : ''), 5000);
   }, delay || 0);
+}
+
+// 版11：これまでの MichiMiru の記録から、乗った区間を1回だけ拾い直す（まとめた路線のデータがあるときだけ）
+async function segPassOnce() {
+  if (getLS('segpass', false) || !michiOn) return;
+  if (!LINES.length) await loadLines();
+  if (!LINE_GROUPS.length) return;
+  const r = await michiSync(null, { segOnly: true });
+  if (!r) return;
+  setLS('segpass', true);
+  if (r.count.seg) {
+    refreshRides();
+    if (curTab === 'zukan') renderZukan();
+    toast(`🚃 MichiMiru の記録から、乗った区間 ${r.count.seg}`, 5000);
+  }
 }
 
 // ---------- GPX（OpenTracks など） ----------
@@ -286,6 +304,7 @@ async function onGpxFiles(files) {
 
 function afterRecChanged() {
   refreshSpots();
+  refreshRides();
   refreshCity();
   updHere();
   if (curTab === 'today') renderToday();
@@ -295,7 +314,7 @@ function afterRecChanged() {
 // ---------- 画面の部品をつなぐ ----------
 function wireUi() {
   document.querySelectorAll('#tabbar button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
-  $('chips').innerHTML = SHELF_ORDER.map(k => `<button class="chip" data-sh="${k}" style="--sc:${SHELVES[k].color}">${SHELVES[k].icon}<span>${SHELVES[k].name}</span></button>`).join('');
+  $('chips').innerHTML = ZK_ORDER.map(k => `<button class="chip" data-sh="${k}" style="--sc:${SHELVES[k].color}">${SHELVES[k].icon}<span>${SHELVES[k].name}</span></button>`).join('');
   document.querySelectorAll('#chips .chip').forEach(b => b.onclick = () => { filt[b.dataset.sh] = !filt[b.dataset.sh]; applyFilter(); });
   applyFilter();
   $('mFollow').onclick = () => {
