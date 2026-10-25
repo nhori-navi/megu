@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#7a5c8e">
 <title>MeguMiru（メグミル）</title>
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
-<link href="style.css?v=7" rel="stylesheet">
+<link href="style.css?v=9" rel="stylesheet">
 </head>
 <body>
 
@@ -22,6 +22,11 @@
   </div>
   <div id="zoomHint" hidden>地図を近づけると、その都県の駅や史跡が出てきます</div>
   <div id="mapMsg" hidden></div>
+  <div id="nearBar" hidden>
+    <span id="nearIcon"></span>
+    <span id="nearText"></span>
+    <button id="nearClose" type="button" aria-label="閉じる">×</button>
+  </div>
   <div id="mapBtns">
     <button id="mHere" type="button" title="いまここ（その場で記録）" hidden>📍<span id="mHereN"></span></button>
     <button id="mFollow" type="button" title="現在地に戻る">◎</button>
@@ -30,10 +35,19 @@
 
 <section class="panel" id="p-today" hidden>
   <h2>✨ 今日</h2>
-  <div class="dayNav">
+  <div class="segBtn">
+    <button id="modeDay" type="button" class="on">日ごと</button>
+    <button id="modeMonth" type="button">月ごと</button>
+  </div>
+  <div class="dayNav" id="dayNavBox">
     <button class="btn sm" id="dayPrev" type="button">◀ 前の日</button>
     <span id="dayLabel"></span>
     <button class="btn sm" id="dayNext" type="button">次の日 ▶</button>
+  </div>
+  <div class="dayNav" id="monNavBox" hidden>
+    <button class="btn sm" id="monPrev" type="button">◀ 前の月</button>
+    <span id="monthLabel"></span>
+    <button class="btn sm" id="monNext" type="button">次の月 ▶</button>
   </div>
   <div id="todaySum" class="card"></div>
   <div id="todayList"></div>
@@ -67,6 +81,12 @@
   <div class="card">
     <label class="sw"><span>記録する<small>アプリを開いている間、位置から自動で記録します</small></span><input type="checkbox" id="setRec"></label>
     <label class="sw" id="setWakeRow"><span>画面を消さない<small>記録中だけ。電池を多く使います</small></span><input type="checkbox" id="setWake"></label>
+    <label class="sw"><span>近くのまだ行っていない場所を知らせる<small>歩いているとき、400m以内のミュージアム・史跡・道の駅（駅は知らせません）</small></span><input type="checkbox" id="setNear"></label>
+  </div>
+  <h3>MichiMiru の記録</h3>
+  <div class="card">
+    <label class="sw"><span>MichiMiru の歩いた記録も使う<small>このスマホの MichiMiru に残っている記録を、そのまま読んで判定します（MichiMiru 側は変わりません）</small></span><input type="checkbox" id="setMichi"></label>
+    <p id="michiStatus" class="note"></p>
   </div>
   <h3>都県のデータ</h3>
   <p class="note">地図で近づくと自動で読み込みます。90日たつと取り直します。</p>
@@ -133,14 +153,16 @@
 
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
 <script src="config.js"></script>
-<script src="js/base.js?v=8"></script>
+<script src="js/base.js?v=9"></script>
 <script src="js/data.js?v=8"></script>
 <script src="js/rec.js?v=7"></script>
 <script src="js/map.js?v=9"></script>
 <script src="js/zukan.js?v=7"></script>
 <script src="js/gpx.js?v=7"></script>
-<script src="js/ui.js?v=7"></script>
+<script src="js/michi.js?v=9"></script>
+<script src="js/near.js?v=9"></script>
+<script src="js/ui.js?v=9"></script>
 <script src="js/help.js?v=1"></script>
-<script src="js/main.js?v=7"></script>
+<script src="js/main.js?v=9"></script>
 </body>
 </html>

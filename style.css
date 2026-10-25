@@ -1,4 +1,4 @@
-/* MeguMiru 版7 */
+/* MeguMiru 版9 */
 :root {
   --c: #7a5c8e;          /* くすんだ紫（シリーズ内の MeguMiru の色） */
   --c-soft: #efe9f3;
@@ -150,3 +150,27 @@ a { color: var(--c); }
 .tag { display: inline-block; margin-left: 6px; font-size: 12px; color: var(--sub); }
 .dayNav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -4px 0 10px; }
 #dayLabel { font-weight: 600; }
+
+/* 版9：近づいたら知らせる */
+#nearBar { position: absolute; left: 10px; right: 10px; top: calc(env(safe-area-inset-top, 0px) + 104px); display: flex; align-items: center; gap: 10px; background: #fff; color: #222;
+  border-radius: 14px; padding: 8px 8px 8px 10px; box-shadow: 0 2px 10px rgba(0,0,0,.25); border-left: 6px solid var(--sc, #888); z-index: 5; }
+#nearBar[hidden] { display: none; }
+#nearIcon { font-size: 24px; cursor: pointer; }
+#nearText { flex: 1; min-width: 0; cursor: pointer; }
+#nearText b { display: block; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#nearText small { color: #666; font-size: 12.5px; }
+#nearClose { border: 0; background: none; font-size: 22px; color: #888; width: 34px; height: 34px; }
+/* 版9：日ごと／月ごと・カレンダー */
+.segBtn { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: -4px 0 10px; }
+.segBtn button { flex: 1; border: 0; background: var(--card); padding: 8px; font-size: 14px; color: var(--sub); }
+.segBtn button.on { background: var(--c); color: #fff; font-weight: 600; }
+#monthLabel { font-weight: 600; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px; }
+.calW { text-align: center; font-size: 12px; color: var(--sub); padding: 2px 0; }
+.calD { border: 0; background: none; border-radius: 8px; min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; color: var(--sub); }
+.calD span { font-size: 13px; }
+.calD small { font-size: 11px; font-weight: 600; color: var(--c); }
+.calD.has { background: var(--c-soft); color: var(--ink); }
+.calD.today { outline: 2px solid var(--c); }
+.calD:disabled { opacity: .55; }
+.dayNav[hidden] { display: none; }
