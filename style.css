@@ -190,3 +190,44 @@ a { color: var(--c); }
 @media (prefers-color-scheme: dark) {
   .mj, .mjLine { background: #4a3d1c; color: #f0d690; }
 }
+
+/* 版11：達成状況・路線 */
+.bar { position: relative; display: block; height: 6px; margin-top: 4px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.bar i { position: absolute; top: 0; bottom: 0; left: 0; background: var(--sc, var(--c)); }
+.bar i.p { opacity: 0.35; }
+#zkAch .ach { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px 8px; margin-bottom: 10px; }
+.achT { margin: 0 0 6px; font-weight: 600; font-size: 14px; }
+.ach ul { list-style: none; margin: 0; padding: 0; }
+.achR { display: grid; grid-template-columns: 1fr auto; column-gap: 8px; padding: 6px 4px; border-radius: 8px; cursor: pointer; }
+.achR.on { background: var(--c-soft); outline: 1.5px solid var(--c); }
+.achN { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.achN small { margin-left: 6px; color: var(--sub); font-size: 11px; }
+.achV { font-weight: 600; font-size: 14px; }
+.achV small { font-weight: 400; color: var(--sub); font-size: 12px; }
+.achR .bar { grid-column: 1 / -1; }
+.achX { grid-column: 1 / -1; color: var(--sub); font-size: 11px; margin-top: 2px; }
+.achMore { display: block; margin: 4px auto 0; border: 0; background: none; color: var(--c); font: inherit; font-size: 13px; padding: 4px 8px; }
+.achL { margin: 6px 0 0; font-size: 11px; color: var(--sub); display: flex; align-items: center; gap: 4px; }
+.achL i { display: inline-block; width: 14px; height: 6px; border-radius: 3px; background: var(--sc, var(--c)); margin-left: 6px; }
+.achL i.p { opacity: 0.35; }
+#zkFilt { margin: -2px 0 6px; }
+#zkFilt .chip { padding: 6px 12px; border-radius: 16px; border: 1px solid var(--c); background: var(--c); color: #fff; font: inherit; font-size: 13px; }
+.lnRow .nm .bar { max-width: 220px; --sc: #c2416b; }
+.lnRow .badge { background: #c2416b; }
+.lnRow .badge.lv1 { background: transparent; color: #c2416b; border: 1px solid #c2416b; }
+#sheet .lvline .bar { --sc: #c2416b; margin-top: 6px; }
+.ldgT { margin: 12px 0 2px; font-size: 13px; color: var(--sub); }
+.ldg { list-style: none; margin: 6px 0 4px; padding: 0 0 0 4px; }
+.ldg li { position: relative; display: flex; align-items: center; gap: 8px; padding: 9px 0 3px 22px; cursor: pointer; font-size: 14px; }
+.ldg li:first-child { padding-top: 3px; }
+.ldg li.seg::before { content: ''; position: absolute; left: 6px; top: -4px; height: 18px; width: 0; border-left: 3px solid var(--line); }
+.ldg li.seg.on::before { border-left-color: #c2416b; }
+.ldg li.seg.est::before { border-left: 3px dashed #c2416b; }
+.ldot { position: absolute; left: 1px; width: 13px; height: 13px; box-sizing: border-box; border-radius: 50%; border: 2px solid #9a93a3; background: var(--card); }
+.ldot.lv1 { border-color: #3b6fb6; }
+.ldot.lv2 { border-color: #3b6fb6; background: #3b6fb6; }
+.ldg li small { color: var(--sub); font-size: 11px; }
+.lnLinks { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.lnLink { border: 1px solid #c2416b; color: #c2416b; background: transparent; border-radius: 14px; padding: 4px 10px; font: inherit; font-size: 12px; }
+.delRow { text-align: right; margin: 10px 0 0; }
+.linkBtn { border: 0; background: none; color: var(--sub); text-decoration: underline; font: inherit; font-size: 12px; padding: 4px; }
