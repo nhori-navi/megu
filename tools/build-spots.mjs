@@ -1,4 +1,4 @@
-// build-spots.mjs：GitHub の側で、10都県の場所データ（data/spots-都県コード.json）と路線（data/lines.json）を作る（版7）
+// build-spots.mjs：GitHub の側で、10都県の場所データ（data/spots-都県コード.json）・路線（data/lines.json）・名城（data/meijo.json）を作る（版10）
 // 動かし方：GitHub の「Actions」→「場所データを作る」→「Run workflow」（毎月2日の朝にも自動で動く）
 // OpenStreetMap の地域まるごとのファイル（Geofabrik の関東・中部）を Actions でダウンロードし、
 //   ・osmium で駅などだけを抜き出したもの（GeoJSON の1行1件、名前が .geojsonseq）
@@ -13,8 +13,8 @@ const ctx = vm.createContext({ console, setTimeout, clearTimeout });
 for (const f of ['js/base.js', 'js/data.js']) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx, { filename: f });
 ctx.__city = JSON.parse(fs.readFileSync('data/city.json', 'utf8'));
 vm.runInContext('initCity(__city)', ctx);
-const { PREFS, PREF_DV, DATA_REV, parseOsm, stationName, dist } =
-  vm.runInContext('({ PREFS, PREF_DV, DATA_REV, parseOsm, stationName, dist })', ctx);
+const { PREFS, PREF_DV, DATA_REV, parseOsm, stationName, dist, prefOfPoint } =
+  vm.runInContext('({ PREFS, PREF_DV, DATA_REV, parseOsm, stationName, dist, prefOfPoint })', ctx);
 
 // GeoJSON の1件を、Overpass と同じ形（点は lat/lon、線や面は center）にする
 function toElement(f) {
@@ -159,6 +159,93 @@ async function buildLines() {
   const st = {};
   for (const [id, s] of used) st[id] = [s.n, s.x, s.y, s.p];
   return { lines, st };
+}
+
+// ---------- 名城（版10） ----------
+// 日本100名城・続日本100名城のうち関東甲信越の41城。[番号, 名前, 都県, Wikipedia の記事名の候補]
+const MEIJO = [
+  [14, '水戸城', '08', ['水戸城']], [15, '足利氏館', '09', ['足利氏館', '鑁阿寺']], [16, '箕輪城', '10', ['箕輪城']],
+  [17, '金山城', '10', ['金山城 (上野国)', '金山城']], [18, '鉢形城', '11', ['鉢形城']], [19, '川越城', '11', ['川越城']],
+  [20, '佐倉城', '12', ['佐倉城']], [21, '江戸城', '13', ['江戸城']], [22, '八王子城', '13', ['八王子城']],
+  [23, '小田原城', '14', ['小田原城']], [24, '武田氏館', '19', ['躑躅ヶ崎館', '武田氏館']], [25, '甲府城', '19', ['甲府城']],
+  [26, '松代城', '20', ['松代城']], [27, '上田城', '20', ['上田城']], [28, '小諸城', '20', ['小諸城']],
+  [29, '松本城', '20', ['松本城']], [30, '高遠城', '20', ['高遠城']], [31, '新発田城', '15', ['新発田城']],
+  [32, '春日山城', '15', ['春日山城']],
+  [113, '笠間城', '08', ['笠間城']], [114, '土浦城', '08', ['土浦城']], [115, '唐沢山城', '09', ['唐沢山城']],
+  [116, '名胡桃城', '10', ['名胡桃城']], [117, '沼田城', '10', ['沼田城']], [118, '岩櫃城', '10', ['岩櫃城']],
+  [119, '忍城', '11', ['忍城']], [120, '杉山城', '11', ['杉山城 (武蔵国)', '杉山城']], [121, '菅谷館', '11', ['菅谷館']],
+  [122, '本佐倉城', '12', ['本佐倉城']], [123, '大多喜城', '12', ['大多喜城']], [124, '滝山城', '13', ['滝山城 (武蔵国)', '滝山城']],
+  [125, '品川台場', '13', ['品川台場']], [126, '小机城', '14', ['小机城']], [127, '石垣山城', '14', ['石垣山城']],
+  [128, '新府城', '19', ['新府城']], [129, '要害山城', '19', ['要害山城 (甲斐国)', '要害山城']], [130, '龍岡城', '20', ['龍岡城']],
+  [131, '高島城', '20', ['高島城 (信濃国)', '高島城']], [132, '村上城', '15', ['村上城']], [133, '高田城', '15', ['高田城 (越後国)', '高田城']],
+  [134, '鮫ヶ尾城', '15', ['鮫ヶ尾城']]
+];
+
+// Wikipedia から位置を受け取る（記事名 → {lat, lon}）
+async function wikiCoords(titles) {
+  const out = {};
+  for (let i = 0; i < titles.length; i += 40) {
+    const part = titles.slice(i, i + 40);
+    const url = 'https://ja.wikipedia.org/w/api.php?action=query&prop=coordinates&redirects=1&format=json&formatversion=2&titles=' + encodeURIComponent(part.join('|'));
+    try {
+      const res = await fetch(url, { headers: { 'User-Agent': 'MeguMiru-data-builder (github.com/nhori-navi/megu)' } });
+      if (!res.ok) { console.log(`  Wikipedia：HTTP ${res.status}`); continue; }
+      const js = await res.json();
+      const q = js.query || {};
+      const map = {};
+      for (const n of (q.normalized || [])) map[n.from] = n.to;
+      for (const r of (q.redirects || [])) map[r.from] = r.to;
+      const byTitle = {};
+      for (const pg of (q.pages || [])) if (pg.coordinates && pg.coordinates[0]) byTitle[pg.title] = { lat: pg.coordinates[0].lat, lon: pg.coordinates[0].lon };
+      for (const t of part) {
+        let k = t, guard = 0;
+        while (map[k] && guard++ < 5) k = map[k];
+        if (byTitle[k]) out[t] = byTitle[k];
+      }
+    } catch (e) { console.log('  Wikipedia：' + e.message); }
+  }
+  return out;
+}
+
+async function buildMeijo() {
+  const titles = [...new Set(MEIJO.flatMap(m => m[3]))];
+  const wc = await wikiCoords(titles);
+  const castles = all.filter(s => s.sh === 'hi' && s.sub === '城跡');
+  const list = [];
+  let fromOsm = 0, fromWiki = 0;
+  for (const [no, n, pc, ts] of MEIJO) {
+    // Wikipedia の位置：候補の記事名を順に試し、その都県にあるものを使う
+    let ref = null, wt = null;
+    for (const t of ts) { const c = wc[t]; if (c && prefOfPoint(c.lon, c.lat) === pc) { ref = c; wt = t; break; } }
+    // 場所データの城跡と合わせる：名前（「城」「館」を除いた部分）を含み、Wikipedia の位置から3km以内（位置がなければ同じ都県で1つだけ）
+    const base = n.replace(/(城|館)$/, '');
+    let cand = castles.filter(s => s.p === pc && base.length >= 2 && s.n.includes(base));
+    if (n === '忍城') cand = castles.filter(s => s.p === pc && /^忍城/.test(s.n));
+    let hit = null;
+    if (ref) {
+      cand = cand.map(s => [s, dist(ref.lon, ref.lat, s.x, s.y)]).filter(([, d]) => d <= 3000).sort((a, b) => a[1] - b[1]);
+      if (cand.length) hit = cand[0][0];
+      else {   // 名前が違っても、Wikipedia の位置から400m以内の城跡（〇〇城址公園など）
+        const near = castles.filter(s => s.p === pc).map(s => [s, dist(ref.lon, ref.lat, s.x, s.y)]).filter(([, d]) => d <= 400).sort((a, b) => a[1] - b[1]);
+        if (near.length) hit = near[0][0];
+      }
+    } else {
+      const exact = cand.filter(s => s.n.startsWith(n));
+      if (cand.length === 1) hit = cand[0]; else if (exact.length === 1) hit = exact[0];
+    }
+    if (hit) fromOsm++; else if (ref) fromWiki++;
+    if (!hit && !ref) { console.log(`  ✗ ${n}：場所が分かりませんでした`); continue; }
+    list.push({ no, n, p: pc, x: hit ? hit.x : Math.round(ref.lon * 1e5) / 1e5, y: hit ? hit.y : Math.round(ref.lat * 1e5) / 1e5, id: hit ? hit.id : null, on: hit ? hit.n : null, wt });
+  }
+  return { list, fromOsm, fromWiki };
+}
+
+{
+  const { list, fromOsm, fromWiki } = await buildMeijo();
+  if (list.length) {
+    fs.writeFileSync('data/meijo.json', JSON.stringify({ v: 1, t: Date.now(), src: 'OpenStreetMap contributors (ODbL) / Wikipedia', list }));
+    console.log(`○ 名城：${list.length}／${MEIJO.length}城（場所データの城跡と合わせた ${fromOsm}・Wikipedia の位置で補った ${fromWiki}）`);
+  } else console.log('✗ 名城：作れませんでした（前のファイルがあればそのまま残します）');
 }
 
 if (routeFiles.length) {
