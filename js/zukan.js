@@ -1,13 +1,12 @@
 // zukan.js：図鑑と、場所の詳しい画面
-// 版10：名城の印・名城だけ・一言説明
-// 版11：路線の棚（乗った区間）・達成状況（棚ごとのまとまりの棒）・記録を消す・道の駅などの「通過」
+// 版10：名城の印・一言説明
+// 版11：路線の棚（乗った区間）・記録を消す・道の駅などの「通過」
+// 版12：まとまりごとの一覧（見出しを押すと、その下に中身が開く。都県を選ぶと、まとまりの数もその都県の分）
 let zkShelf = getLS('zkshelf', 'st');
 let zkPref = getLS('zkpref', '');
 let zkState = getLS('zkstate', 'all');   // all / done / yet
+let zkView = getLS('zkview', 'group');   // group＝まとまりごと / flat＝全部を並べる
 let zkLimit = 200;
-let zkMeijo = getLS('zkmeijo', false);   // 史跡の棚で「名城だけ」
-let zkGroup = '';                        // 達成状況の棒で絞り込み中（駅の棚：'L'＋路線の番号、路線の棚：'C'＋会社の名前）
-let zkAchOpen = getLS('zkachopen', false);
 
 function itemInfo(id) {
   // 場所の情報（読み込み済みのデータ → 記録の控え → 市区町村のデータ の順に探す）
@@ -62,136 +61,185 @@ function barHtml(a, b, total) {
   return `<span class="bar"><i style="width:${pa}%"></i><i class="p" style="left:${pa}%;width:${pb}%"></i></span>`;
 }
 
-// ---------- 版11：達成状況（棚ごとのまとまり） ----------
-function achRows() {
-  const rows = [];
-  const cnt = ids => { let v = 0, p = 0; for (const id of ids) { const l = lvOf(id); if (l >= 2) v++; else if (l === 1) p++; } return [v, p]; };
+
+// ---------- 版12：まとまりごとの一覧 ----------
+// まとまり：駅＝路線、市区町村・道の駅・ミュージアム＝都県、史跡＝名城と都県、路線＝会社
+// 都県を選んでいるときは、まとまりの数も中身もその都県の分だけで数える
+function zkRowHtml(s, here) {
+  const lv = lvOf(s.id), r = REC[s.id];
+  const dOf = (here && s.x != null) ? dist(here[0], here[1], s.x, s.y) : null;
+  const st = lv ? `<span class="badge lv${lv}${r.e ? ' est' : ''}">${LV_NAME[s.sh][lv]}${r.e ? '・推定' : ''}</span><span class="date">${fmtDate(r.l)}</span>`
+    : (dOf != null ? `<span class="date">${fmtDist(dOf)}</span>` : '');
+  const sub = s.sh === 'st' || s.sh === 'city' ? '' : s.sub + '・';
+  const mj = s.sh === 'hi' ? meijoNo(s) : 0;
+  const mjTag = mj ? `<span class="mj">🏯${mj >= 101 ? '続100名城' : '100名城'}</span>` : '';
+  return `<li class="row${lv ? '' : ' yet'}" data-id="${esc(s.id)}"><span class="dot" style="background:${SHELVES[s.sh].color}"></span>`
+    + `<span class="nm">${esc(s.n)}<small>${mjTag}${esc(sub)}${esc(PREF_NAME[s.p] || '')}</small></span><span class="st">${st}</span></li>`;
+}
+function zkLineRowHtml(o) {
+  const pct = o.total ? Math.round(o.done / o.total * 100) : 0;
+  return `<li class="row lnRow${o.done ? '' : ' yet'}" data-gi="${o.gi}"><span class="dot" style="background:${SHELVES.ln.color}"></span>`
+    + `<span class="nm">${esc(o.g.n)}<small>${esc(o.g.co)}・${o.done}／${o.total}区間${o.est ? `（うち推定 ${o.est}）` : ''}</small>${barHtml(o.done - o.est, o.est, o.total)}</span>`
+    + `<span class="st">${o.done ? `<span class="badge${pct === 100 ? '' : ' lv1'}">${pct === 100 ? '乗りつぶし' : pct + '%'}</span>` : ''}</span></li>`;
+}
+const zkSortSpots = (items, here) => {
+  const dOf = s => (here && s.x != null) ? dist(here[0], here[1], s.x, s.y) : Infinity;
+  return items.sort((a, b) => {
+    const ra = REC[a.id], rb = REC[b.id];
+    if (ra && rb) return rb.l - ra.l;
+    if (ra) return -1;
+    if (rb) return 1;
+    if (a.sh === 'city') return a.id < b.id ? -1 : 1;
+    return dOf(a) - dOf(b);
+  });
+};
+const inPref = s => !zkPref || s.p === zkPref;
+
+// 棚のまとまり：[{key, n, sub, items, total, v, p, unit, order(並びを保つ)}]
+function zkGroups() {
+  const out = [];
+  const cnt = items => { let v = 0, p = 0; for (const s of items) { const l = lvOf(s.id); if (l >= 2) v++; else if (l === 1) p++; } return [v, p]; };
+  const add = (key, n, sub, items, unit, order) => {
+    if (!items.length) return;
+    const [v, p] = cnt(items);
+    out.push({ key, n, sub, items, total: items.length, v, p, unit, order });
+  };
   if (zkShelf === 'st') {
+    const onLine = new Set();
     LINE_GROUPS.forEach((g, gi) => {
-      const [v, p] = cnt(g.ss);
-      if (v + p) rows.push({ key: 'L' + gi, n: g.n, sub: g.co, v, p, total: g.ss.length, unit: '駅' });
+      const seen = new Set(), items = [];
+      for (const ch of g.c) for (const id of ch) {
+        if (seen.has(id)) continue;
+        seen.add(id); onLine.add(id);
+        const s = itemInfo(id);
+        if (s && inPref(s)) items.push(s);
+      }
+      const part = zkPref && items.length < g.ss.length ? `（${PREF_NAME[zkPref]}の分）` : '';
+      add('L' + gi, g.n, g.co + part, items, '駅', true);
     });
-  } else if (zkShelf === 'city') {
-    for (const [pc, name] of PREFS) {
-      const ids = CITY.filter(c => c.c.slice(0, 2) === pc).map(c => 'c' + c.c);
-      const [v, p] = cnt(ids);
-      rows.push({ key: 'P' + pc, n: name, v, p, total: ids.length, unit: '' });
-    }
+    const other = zkItems().filter(s => !onLine.has(s.id) && inPref(s));
+    add('L-', 'その他の駅', '路線のデータにない駅', other, '駅');
   } else if (zkShelf === 'ln') {
     const by = new Map();
-    LINE_GROUPS.forEach(g => {
-      const st = lineStat(g);
-      if (!by.has(g.co)) by.set(g.co, { lines: 0, full: 0, segs: 0, total: 0, est: 0 });
-      const o = by.get(g.co);
-      o.lines++; o.segs += st.done; o.total += st.total; o.est += st.est;
-      if (st.total && st.done === st.total) o.full++;
+    LINE_GROUPS.forEach((g, gi) => {
+      if (zkPref && !lineInPref(g, zkPref)) return;
+      if (!by.has(g.co)) by.set(g.co, []);
+      by.get(g.co).push(Object.assign({ g, gi }, lineStat(g)));
     });
-    for (const [co, o] of by) if (o.segs) rows.push({ key: 'C' + co, n: co, v: o.segs - o.est, p: o.est, total: o.total, unit: '区間', extra: `乗りつぶし ${o.full}／${o.lines}路線` });
-  } else {
-    if (zkShelf === 'hi' && MEIJO.length) {
-      let v = 0, p = 0;
-      for (const m of MEIJO) { const l = meijoLv(m); if (l >= 2) v++; else if (l === 1) p++; }
-      rows.push({ key: 'M', n: '🏯 名城（100名城・続100名城）', v, p, total: MEIJO.length, unit: '城' });
+    for (const [co, ls] of by) {
+      const segs = ls.reduce((a, o) => a + o.done, 0), est = ls.reduce((a, o) => a + o.est, 0), total = ls.reduce((a, o) => a + o.total, 0);
+      const full = ls.filter(o => o.total && o.done === o.total).length;
+      out.push({ key: 'C' + co, n: co, sub: `${ls.length}路線・乗りつぶし ${full}`, items: ls, total, v: segs - est, p: est, unit: '区間', lines: true });
     }
+  } else {
+    if (zkShelf === 'hi' && MEIJO.length) add('M', '🏯 名城', '100名城・続100名城', zkMeijoItems().filter(inPref), '城');
     const all = zkItems();
     for (const [pc, name] of PREFS) {
-      const ids = all.filter(s => s.p === pc).map(s => s.id);
-      if (!PREF_META[pc] && !ids.length) continue;
-      const [v, p] = cnt(ids);
-      rows.push({ key: 'P' + pc, n: name, v, p, total: ids.length, unit: '', sub: PREF_META[pc] ? '' : '未読み込み' });
+      if (zkPref && pc !== zkPref) continue;
+      const items = all.filter(s => s.p === pc);
+      add('P' + pc, name, zkShelf !== 'city' && !PREF_META[pc] ? '未読み込み（行った所だけ）' : '', items, '');
     }
   }
-  const ratio = r => r.total ? (r.v + r.p) / r.total : 0;
-  if (zkShelf === 'st' || zkShelf === 'ln') rows.sort((a, b) => ratio(b) - ratio(a) || (b.v + b.p) - (a.v + a.p));
-  return rows;
+  return out;
 }
 
-function renderAch() {
-  const box = $('zkAch');
-  if (!box) return;
-  const rows = achRows();
-  const isOn = r => (r.key === 'M' && zkMeijo && zkShelf === 'hi') || (r.key[0] === 'P' && zkPref === r.key.slice(1)) || (zkGroup && zkGroup === r.key);
-  if (!rows.length) {
-    box.innerHTML = zkShelf === 'st' && !LINE_GROUPS.length ? '' : `<div class="ach"><p class="achT">達成状況</p><p class="note">${zkShelf === 'ln' ? 'まだ乗った区間はありません。電車に乗ると、駅と駅の間が記録されます' : 'まだ記録がありません'}</p></div>`;
-    return;
-  }
-  const show = zkAchOpen ? rows : rows.slice(0, 4);
-  box.innerHTML = `<div class="ach" style="--sc:${SHELVES[zkShelf].color}"><p class="achT">達成状況${zkShelf === 'st' ? '（路線ごとの駅）' : zkShelf === 'ln' ? '（会社ごと）' : '（都県ごと）'}</p><ul>`
-    + show.map(r => `<li class="achR${isOn(r) ? ' on' : ''}" data-k="${esc(r.key)}"><span class="achN">${esc(r.n)}${r.sub ? `<small>${esc(r.sub)}</small>` : ''}</span>`
-      + `<span class="achV">${r.v + r.p}<small>／${r.total}${r.unit}</small></span>${barHtml(r.v, r.p, r.total)}`
-      + (r.extra ? `<small class="achX">${esc(r.extra)}</small>` : '') + '</li>').join('')
-    + '</ul>' + (rows.length > 4 ? `<button class="achMore" id="achMore">${zkAchOpen ? '閉じる ▴' : `すべて見る（${rows.length}） ▾`}</button>` : '')
-    + '<p class="achL"><i></i>' + (zkShelf === 'st' ? '降車' : zkShelf === 'ln' ? '乗った' : '訪問') + '<i class="p"></i>' + (zkShelf === 'ln' ? '推定' : '通過') + '</p></div>';
-  box.querySelectorAll('.achR').forEach(li => li.onclick = () => {
-    const k = li.dataset.k;
-    if (k === 'M') { zkMeijo = !zkMeijo; setLS('zkmeijo', zkMeijo); }
-    else if (k[0] === 'P') { zkPref = zkPref === k.slice(1) ? '' : k.slice(1); setLS('zkpref', zkPref); $('zkPref').value = zkPref; }
-    else zkGroup = zkGroup === k ? '' : k;
-    zkLimit = 200; renderZukan();
-  });
-  const more = $('achMore');
-  if (more) more.onclick = () => { zkAchOpen = !zkAchOpen; setLS('zkachopen', zkAchOpen); renderAch(); };
+let zkOpen = new Set(getLS('zkopen', []));
+let zkShowYetGroups = false;
+const zkGLimit = {};
+function zkToggle(k) {
+  const key = zkShelf + ':' + k;
+  if (zkOpen.has(key)) zkOpen.delete(key); else zkOpen.add(key);
+  setLS('zkopen', [...zkOpen].slice(-60));
+  renderZukan();
 }
 
 function renderZukan() {
   const box = $('zkTabs');
   box.innerHTML = ZK_ORDER.map(k => `<button class="zkTab${k === zkShelf ? ' on' : ''}" data-sh="${k}" style="--sc:${SHELVES[k].color}">${SHELVES[k].icon}<span>${SHELVES[k].name}</span></button>`).join('');
-  box.querySelectorAll('.zkTab').forEach(b => b.onclick = () => { zkShelf = b.dataset.sh; setLS('zkshelf', zkShelf); zkLimit = 200; zkGroup = ''; renderZukan(); });
-  if (zkGroup && zkGroup[0] !== (zkShelf === 'st' ? 'L' : zkShelf === 'ln' ? 'C' : '-')) zkGroup = '';
+  box.querySelectorAll('.zkTab').forEach(b => b.onclick = () => { zkShelf = b.dataset.sh; setLS('zkshelf', zkShelf); zkLimit = 200; zkShowYetGroups = false; renderZukan(); });
+  const vb = $('zkView');
+  if (vb) { vb.textContent = zkView === 'group' ? '☰ 全部を並べる' : '▤ まとまりで見る'; }
+  $('zkList').style.setProperty('--sc', SHELVES[zkShelf].color);
+  if (zkView === 'flat') { if (zkShelf === 'ln') renderLinesFlat(); else renderFlat(); return; }
+  renderGrouped();
+}
 
-  const mb = $('zkMeijo');
-  if (mb) { mb.hidden = zkShelf !== 'hi' || !MEIJO.length; mb.classList.toggle('on', zkShelf === 'hi' && zkMeijo); }
-  renderAch();
-  // 絞り込み中の印
-  let gname = '';
-  if (zkGroup[0] === 'L') { const g = LINE_GROUPS[+zkGroup.slice(1)]; gname = g ? g.n : ''; }
-  if (zkGroup[0] === 'C') gname = zkGroup.slice(1);
-  $('zkFilt').innerHTML = gname ? `<button class="chip on" id="zkFiltX">${esc(gname)} だけ ×</button>` : '';
-  if (gname) $('zkFiltX').onclick = () => { zkGroup = ''; renderZukan(); };
+function renderGrouped() {
+  const here = lastFix ? [lastFix.x, lastFix.y] : lastPos;
+  const groups = zkGroups();
+  if (zkShelf === 'ln' && !LINE_GROUPS.length) {
+    $('zkStat').innerHTML = '';
+    $('zkList').innerHTML = '<p class="note">路線のデータがまだありません（GitHub で「場所データを作る」を動かすと用意されます）。</p>';
+    return;
+  }
+  // いちばん上：棚ぜんたい（選んだ都県の分）
+  if (zkShelf === 'ln') {
+    const segs = groups.reduce((a, g) => a + g.v + g.p, 0), total = groups.reduce((a, g) => a + g.total, 0);
+    const lines = groups.flatMap(g => g.items), full = lines.filter(o => o.total && o.done === o.total).length;
+    $('zkStat').innerHTML = `乗った区間 ${segs}<span class="sub"> ／ ${total}</span>　<span class="sub">乗りつぶし ${full}／${lines.length}路線${zkPref ? `（${esc(PREF_NAME[zkPref])}を通る路線）` : ''}</span>`;
+  } else {
+    const uniq = new Map();
+    for (const g of groups) if (g.key !== 'M') for (const s of g.items) uniq.set(s.id, s);
+    const all = [...uniq.values()];
+    const done = all.filter(s => lvOf(s.id) > 0).length, pass = all.filter(s => lvOf(s.id) === 1).length;
+    $('zkStat').innerHTML = `${zkPref ? esc(PREF_NAME[zkPref]) + '　' : ''}行った ${done}${pass ? `（うち通過 ${pass}）` : ''}<span class="sub"> ／ ${zkShelf === 'city' ? '全' : 'わかっている'} ${all.length}</span>`;
+  }
+  const ratio = g => g.total ? (g.v + g.p) / g.total : 0;
+  const pinned = groups.filter(g => g.key === 'M');
+  const started = groups.filter(g => g.key !== 'M' && g.v + g.p > 0).sort((a, b) => ratio(b) - ratio(a) || (b.v + b.p) - (a.v + a.p));
+  const yet = groups.filter(g => g.key !== 'M' && !(g.v + g.p));
+  const unitOf = g => g.unit;
+  const head = (g, open) => `<div class="grpH" data-k="${esc(g.key)}"><span class="grpA">${open ? '▾' : '▸'}</span>`
+    + `<span class="grpN">${esc(g.n)}${g.sub ? `<small>${esc(g.sub)}</small>` : ''}</span>`
+    + `<span class="grpV">${g.v + g.p}<small>／${g.total}${unitOf(g)}</small></span>${barHtml(g.v, g.p, g.total)}</div>`;
+  const body = g => {
+    let items = g.items;
+    if (g.lines) {
+      if (zkState === 'done') items = items.filter(o => o.done);
+      if (zkState === 'yet') items = items.filter(o => !o.done);
+      items = items.slice().sort((a, b) => (b.done ? 1 : 0) - (a.done ? 1 : 0) || (b.done / (b.total || 1)) - (a.done / (a.total || 1)) || b.last - a.last || (a.g.n < b.g.n ? -1 : 1));
+    } else {
+      if (zkState === 'done') items = items.filter(s => lvOf(s.id) > 0);
+      if (zkState === 'yet') items = items.filter(s => lvOf(s.id) === 0);
+      if (!g.order) items = zkSortSpots(items.slice(), here);
+    }
+    const lim = zkGLimit[g.key] || 100;
+    if (!items.length) return '<p class="note grpE">該当するものはありません</p>';
+    return `<ul class="list grpL">${items.slice(0, lim).map(o => g.lines ? zkLineRowHtml(o) : zkRowHtml(o, here)).join('')}</ul>`
+      + (items.length > lim ? `<button class="btn wide grpMore" data-k="${esc(g.key)}">さらに表示（残り ${items.length - lim}）</button>` : '');
+  };
+  const block = g => { const open = zkOpen.has(zkShelf + ':' + g.key); return `<div class="grp${open ? ' open' : ''}">${head(g, open)}${open ? body(g) : ''}</div>`; };
+  let html = pinned.concat(started).map(block).join('');
+  if (yet.length) {
+    html += `<button class="grpYet" id="zkYet">${zkShowYetGroups ? '▾' : '▸'} まだのまとまり（${yet.length}）</button>`;
+    if (zkShowYetGroups) html += yet.map(block).join('');
+  }
+  let note = '';
+  if (zkShelf !== 'city' && zkShelf !== 'ln' && !Object.keys(PREF_META).length) note = '<p class="note">まだどの都県のデータも読み込んでいません。地図で近づくか、設定から読み込んでください。</p>';
+  $('zkList').innerHTML = note + (html || '<p class="note">該当するものはありません。</p>')
+    + '<p class="achL"><i></i>' + (zkShelf === 'st' ? '降車' : zkShelf === 'ln' ? '乗った' : '訪問') + '<i class="p"></i>' + (zkShelf === 'ln' ? '推定' : '通過') + '</p>';
+  const L = $('zkList');
+  L.querySelectorAll('.grpH').forEach(h => h.onclick = () => zkToggle(h.dataset.k));
+  L.querySelectorAll('.row[data-id]').forEach(li => li.onclick = () => showSpot(li.dataset.id));
+  L.querySelectorAll('.row[data-gi]').forEach(li => li.onclick = () => showLine(+li.dataset.gi));
+  L.querySelectorAll('.grpMore').forEach(b => b.onclick = () => { zkGLimit[b.dataset.k] = (zkGLimit[b.dataset.k] || 100) + 300; renderZukan(); });
+  const y = $('zkYet');
+  if (y) y.onclick = () => { zkShowYetGroups = !zkShowYetGroups; renderZukan(); };
+}
 
-  if (zkShelf === 'ln') { renderLines(); return; }
-
-  const meijoMode = zkShelf === 'hi' && zkMeijo && MEIJO.length > 0;
-  let all;
-  if (meijoMode) all = zkMeijoItems();
-  else if (zkGroup[0] === 'L' && LINE_GROUPS[+zkGroup.slice(1)]) all = LINE_GROUPS[+zkGroup.slice(1)].ss.map(id => itemInfo(id)).filter(Boolean);
-  else all = zkItems();
-  let items = all.filter(s => !zkPref || s.p === zkPref);
-  const doneN = items.filter(s => lvOf(s.id) > 0).length;
-  const passN = items.filter(s => lvOf(s.id) === 1).length;
+// 全部を並べる（近い順・新しい順）
+function renderFlat() {
+  const here = lastFix ? [lastFix.x, lastFix.y] : lastPos;
+  const all = zkItems().filter(inPref);
+  let items = all;
+  const doneN = items.filter(s => lvOf(s.id) > 0).length, passN = items.filter(s => lvOf(s.id) === 1).length;
   if (zkState === 'done') items = items.filter(s => lvOf(s.id) > 0);
   if (zkState === 'yet') items = items.filter(s => lvOf(s.id) === 0);
-
-  const here = lastFix ? [lastFix.x, lastFix.y] : lastPos;
-  const dOf = s => (here && s.x != null) ? dist(here[0], here[1], s.x, s.y) : Infinity;
-  items.sort((a, b) => {
-    const ra = REC[a.id], rb = REC[b.id];
-    if (ra && rb) return rb.l - ra.l;
-    if (ra) return -1;
-    if (rb) return 1;
-    if (zkShelf === 'city') return a.id < b.id ? -1 : 1;
-    return dOf(a) - dOf(b);
-  });
-
-  const loadedPrefs = Object.keys(PREF_META).length;
+  zkSortSpots(items, here);
   let note = '';
-  if (zkShelf !== 'city' && !loadedPrefs && !zkGroup && !meijoMode) note = '<p class="note">まだどの都県のデータも読み込んでいません。地図で近づくか、設定から読み込んでください。</p>';
-  const passTxt = passN ? `（うち通過 ${passN}）` : '';
-  const totalN = all.filter(s => !zkPref || s.p === zkPref).length;
-  $('zkStat').innerHTML = meijoMode
-    ? `🏯 ${zkPref ? esc(PREF_NAME[zkPref]) : '関東甲信越'}の名城　行った ${doneN}${passTxt}<span class="sub"> ／ ${totalN}</span>`
-    : `行った ${doneN}${passTxt}<span class="sub"> ／ ${zkShelf === 'city' || zkGroup ? '全' : '読み込み済み'} ${totalN}</span>`;
-
-  const rows = items.slice(0, zkLimit).map(s => {
-    const lv = lvOf(s.id), r = REC[s.id];
-    const st = lv ? `<span class="badge lv${lv}${r.e ? ' est' : ''}">${LV_NAME[s.sh][lv]}${r.e ? '・推定' : ''}</span><span class="date">${fmtDate(r.l)}</span>`
-      : (here && s.x != null ? `<span class="date">${fmtDist(dOf(s))}</span>` : '');
-    const sub = s.sh === 'st' || s.sh === 'city' ? '' : s.sub + '・';
-    const mj = s.sh === 'hi' ? meijoNo(s) : 0;
-    const mjTag = mj ? `<span class="mj">🏯${mj >= 101 ? '続100名城' : '100名城'}</span>` : '';
-    return `<li class="row${lv ? '' : ' yet'}" data-id="${esc(s.id)}"><span class="dot" style="background:${SHELVES[s.sh].color}"></span>`
-      + `<span class="nm">${esc(s.n)}<small>${mjTag}${esc(sub)}${esc(PREF_NAME[s.p] || '')}</small></span><span class="st">${st}</span></li>`;
-  }).join('');
+  if (zkShelf !== 'city' && !Object.keys(PREF_META).length) note = '<p class="note">まだどの都県のデータも読み込んでいません。地図で近づくか、設定から読み込んでください。</p>';
+  $('zkStat').innerHTML = `${zkPref ? esc(PREF_NAME[zkPref]) + '　' : ''}行った ${doneN}${passN ? `（うち通過 ${passN}）` : ''}<span class="sub"> ／ ${zkShelf === 'city' ? '全' : '読み込み済み'} ${all.length}</span>`;
+  const rows = items.slice(0, zkLimit).map(s => zkRowHtml(s, here)).join('');
   $('zkList').innerHTML = note + (rows ? `<ul class="list">${rows}</ul>` : (note ? '' : '<p class="note">該当するものはありません。</p>'))
     + (items.length > zkLimit ? `<button id="zkMore" class="btn wide">さらに表示（残り ${items.length - zkLimit}）</button>` : '');
   $('zkList').querySelectorAll('.row').forEach(li => li.onclick = () => showSpot(li.dataset.id));
@@ -199,29 +247,17 @@ function renderZukan() {
   if (more) more.onclick = () => { zkLimit += 300; renderZukan(); };
 }
 
-// 路線の棚の一覧
-function renderLines() {
-  if (!LINE_GROUPS.length) {
-    $('zkStat').innerHTML = '';
-    $('zkList').innerHTML = '<p class="note">路線のデータがまだありません（GitHub で「場所データを作る」を動かすと用意されます）。</p>';
-    return;
-  }
+function renderLinesFlat() {
+  if (!LINE_GROUPS.length) { $('zkStat').innerHTML = ''; $('zkList').innerHTML = '<p class="note">路線のデータがまだありません。</p>'; return; }
   let gs = LINE_GROUPS.map((g, gi) => Object.assign({ g, gi }, lineStat(g)));
-  if (zkGroup[0] === 'C') gs = gs.filter(o => o.g.co === zkGroup.slice(1));
   if (zkPref) gs = gs.filter(o => lineInPref(o.g, zkPref));
   const segs = gs.reduce((a, o) => a + o.done, 0), total = gs.reduce((a, o) => a + o.total, 0);
-  const full = gs.filter(o => o.total && o.done === o.total).length, some = gs.filter(o => o.done).length;
-  $('zkStat').innerHTML = `乗った区間 ${segs}<span class="sub"> ／ ${total}</span>　<span class="sub">乗った路線 ${some}・乗りつぶし ${full}／${gs.length}路線</span>`;
+  const full = gs.filter(o => o.total && o.done === o.total).length;
+  $('zkStat').innerHTML = `乗った区間 ${segs}<span class="sub"> ／ ${total}</span>　<span class="sub">乗りつぶし ${full}／${gs.length}路線</span>`;
   if (zkState === 'done') gs = gs.filter(o => o.done);
   if (zkState === 'yet') gs = gs.filter(o => !o.done);
   gs.sort((a, b) => (b.done ? 1 : 0) - (a.done ? 1 : 0) || (b.done / (b.total || 1)) - (a.done / (a.total || 1)) || b.last - a.last || (a.g.n < b.g.n ? -1 : 1));
-  const rows = gs.slice(0, zkLimit).map(o => {
-    const pct = o.total ? Math.round(o.done / o.total * 100) : 0;
-    return `<li class="row lnRow${o.done ? '' : ' yet'}" data-gi="${o.gi}"><span class="dot" style="background:${SHELVES.ln.color}"></span>`
-      + `<span class="nm">${esc(o.g.n)}<small>${esc(o.g.co)}・${o.done}／${o.total}区間${o.est ? `（うち推定 ${o.est}）` : ''}</small>${barHtml(o.done - o.est, o.est, o.total)}</span>`
-      + `<span class="st">${o.done ? `<span class="badge${pct === 100 ? '' : ' lv1'}" style="--c:${SHELVES.ln.color}">${pct === 100 ? '乗りつぶし' : pct + '%'}</span>` : ''}</span></li>`;
-  }).join('');
-  $('zkList').innerHTML = (rows ? `<ul class="list">${rows}</ul>` : '<p class="note">該当する路線はありません。</p>')
+  $('zkList').innerHTML = (gs.length ? `<ul class="list">${gs.slice(0, zkLimit).map(zkLineRowHtml).join('')}</ul>` : '<p class="note">該当する路線はありません。</p>')
     + (gs.length > zkLimit ? `<button id="zkMore" class="btn wide">さらに表示（残り ${gs.length - zkLimit}）</button>` : '');
   $('zkList').querySelectorAll('.row').forEach(li => li.onclick = () => showLine(+li.dataset.gi));
   const more = $('zkMore');
@@ -265,8 +301,8 @@ function initZukanControls() {
   const ss = $('zkState');
   ss.value = zkState;
   ss.onchange = () => { zkState = ss.value; setLS('zkstate', zkState); zkLimit = 200; renderZukan(); };
-  const mb = $('zkMeijo');
-  if (mb) mb.onclick = () => { zkMeijo = !zkMeijo; setLS('zkmeijo', zkMeijo); zkLimit = 200; renderZukan(); };
+  const vb = $('zkView');
+  if (vb) vb.onclick = () => { zkView = zkView === 'group' ? 'flat' : 'group'; setLS('zkview', zkView); zkLimit = 200; renderZukan(); };
 }
 
 // ---------- 場所の詳しい画面 ----------

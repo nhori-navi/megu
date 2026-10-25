@@ -1,4 +1,4 @@
-// ui.js：画面の切り替え・今日・設定（MeguMiru 版11：路線の棚・乗った区間。版10：一言説明。版9：月のふりかえり・MichiMiru の記録・近づいたら知らせる）
+// ui.js：画面の切り替え・今日・設定（MeguMiru 版12：計画タブ。版11：路線の棚・乗った区間。版10：一言説明。版9：月のふりかえり・MichiMiru の記録・近づいたら知らせる）
 let curTab = 'map';
 
 function showTab(t) {
@@ -10,6 +10,7 @@ function showTab(t) {
   if (t === 'today') renderToday();
   if (t === 'zukan') renderZukan();
   if (t === 'set') renderSettings();
+  if (t === 'plan') renderPlan();
 }
 
 // ---------- 記録中の表示 ----------

@@ -1,4 +1,4 @@
-// map.js：地図（MeguMiru 版11：乗った区間を線路の形で。版8.1：まだの所は薄い丸、行った所は塗りつぶしのピン、通過は白抜きのピン、推定の通過は点線の白抜き）
+// map.js：地図（MeguMiru 版12：行き先ピン（長押しで立てる・旗の印・5kmの円）。版11：乗った区間を線路の形で。版8.1：まだの所は薄い丸、行った所は塗りつぶしのピン、通過は白抜きのピン、推定の通過は点線の白抜き）
 let map = null;
 let mapReady = false;
 let follow = true;
@@ -51,6 +51,64 @@ function addPinImages() {
   }
 }
 
+// 版12：行き先ピンの旗
+function addPlanImage() {
+  if (map.hasImage && map.hasImage('pin-plan')) return;
+  const R = 2, W = 30, H = 38;
+  const cv = document.createElement('canvas');
+  cv.width = W * R; cv.height = H * R;
+  const g = cv.getContext('2d');
+  g.scale(R, R);
+  g.shadowColor = 'rgba(0,0,0,0.35)'; g.shadowBlur = 2; g.shadowOffsetY = 1;
+  g.fillStyle = '#4a3b57'; g.fillRect(7, 4, 2.6, H - 6);               // さお
+  g.beginPath(); g.moveTo(9.6, 5); g.lineTo(27, 11); g.lineTo(9.6, 18); g.closePath();
+  g.fillStyle = '#e0484f'; g.fill();
+  g.shadowColor = 'transparent'; g.lineWidth = 1.2; g.strokeStyle = '#ffffff'; g.stroke();
+  g.beginPath(); g.arc(8.3, H - 2.5, 2.4, 0, Math.PI * 2); g.fillStyle = '#4a3b57'; g.fill();
+  map.addImage('pin-plan', g.getImageData(0, 0, cv.width, cv.height), { pixelRatio: R });
+}
+let planFocus = null;
+function plansGeo() {
+  const today = ymd(Date.now());
+  return { type: 'FeatureCollection', features: PLANS.map(p => ({ type: 'Feature', properties: { id: p.id, n: p.n, past: p.d && p.d < today ? 1 : 0 }, geometry: { type: 'Point', coordinates: [p.x, p.y] } })) };
+}
+function circlePoly(x, y, r) {
+  const pts = [], kx = 111320 * Math.cos(y * Math.PI / 180), ky = 110540;
+  for (let i = 0; i <= 64; i++) { const a = i / 64 * Math.PI * 2; pts.push([x + r * Math.cos(a) / kx, y + r * Math.sin(a) / ky]); }
+  return pts;
+}
+function planCircleGeo() {
+  const p = planFocus && planById(planFocus);
+  if (!p) return { type: 'FeatureCollection', features: [] };
+  return { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [circlePoly(p.x, p.y, PLAN_R)] } }] };
+}
+function refreshPlans() {
+  if (!mapReady) return;
+  map.getSource('plans').setData(plansGeo());
+  map.getSource('plan-circle').setData(planCircleGeo());
+}
+function focusPlan(id) {
+  planFocus = id;
+  refreshPlans();
+  const p = planById(id);
+  if (p) fitPoints([[p.x, p.y]].concat(circlePoly(p.x, p.y, PLAN_R).filter((_, i) => i % 16 === 0)));
+}
+// 長押し（スマホ）・右クリック（パソコン）で行き先ピンを立てる
+let lpTimer = null, lpAt = null, lpFired = 0;
+function wireLongPress() {
+  const cancel = () => { clearTimeout(lpTimer); lpTimer = null; };
+  map.on('touchstart', e => {
+    cancel();
+    if (!e.originalEvent || e.originalEvent.touches.length !== 1) return;
+    lpAt = e.point;
+    const ll = e.lngLat;
+    lpTimer = setTimeout(() => { lpTimer = null; lpFired = Date.now(); if (navigator.vibrate) try { navigator.vibrate(30); } catch (er) { /* なし */ } newPlanAt(ll.lng, ll.lat); }, 600);
+  });
+  map.on('touchmove', e => { if (lpAt && e.point && Math.hypot(e.point.x - lpAt.x, e.point.y - lpAt.y) > 10) cancel(); });
+  for (const ev of ['touchend', 'touchcancel', 'dragstart', 'zoomstart', 'pitchstart', 'rotatestart']) map.on(ev, cancel);
+  map.on('contextmenu', e => { if (Date.now() - lpFired < 1500) return; cancel(); newPlanAt(e.lngLat.lng, e.lngLat.lat); });
+}
+
 function initMap() {
   if (typeof mapboxgl === 'undefined') { $('mapMsg').textContent = '地図を読み込めませんでした（インターネットの接続を確かめてください）'; $('mapMsg').hidden = false; return; }
   if (!/^pk\./.test(MAPBOX_TOKEN)) { $('mapMsg').textContent = 'config.js に Mapbox のトークン（pk. で始まる）を入れてください'; $('mapMsg').hidden = false; return; }
@@ -68,6 +126,7 @@ function initMap() {
   map.on('moveend', viewChanged);
   map.on('dragstart', () => setFollow(false));
   map.on('click', onMapClick);
+  wireLongPress();
 }
 
 function setupLayers() {
@@ -76,6 +135,8 @@ function setupLayers() {
   map.addSource('spots', { type: 'geojson', data: spotsGeo() });
   map.addSource('me', { type: 'geojson', data: meGeo() });
   map.addSource('rides', { type: 'geojson', data: ridesGeo() });
+  map.addSource('plans', { type: 'geojson', data: plansGeo() });
+  map.addSource('plan-circle', { type: 'geojson', data: planCircleGeo() });
   map.addLayer({
     id: 'city-fill', type: 'fill', source: 'city', slot: 'middle',
     paint: { 'fill-color': cityColorExpr(), 'fill-emissive-strength': 1 }
@@ -134,6 +195,19 @@ function setupLayers() {
       'text-color': '#333', 'text-halo-color': '#fff', 'text-halo-width': 1.2,
       'text-emissive-strength': 1
     }
+  });
+  // 版12：行き先ピン（5kmの円と旗）
+  addPlanImage();
+  map.addLayer({ id: 'plan-circle', type: 'fill', source: 'plan-circle', slot: 'middle', paint: { 'fill-color': '#e0484f', 'fill-opacity': 0.05, 'fill-emissive-strength': 1 } });
+  map.addLayer({ id: 'plan-circle-line', type: 'line', source: 'plan-circle', slot: 'middle', paint: { 'line-color': '#e0484f', 'line-width': 1.6, 'line-dasharray': [2, 1.5], 'line-opacity': 0.7, 'line-emissive-strength': 1 } });
+  map.addLayer({
+    id: 'plans', type: 'symbol', source: 'plans', slot: 'top',
+    layout: {
+      'icon-image': 'pin-plan', 'icon-anchor': 'bottom-left', 'icon-offset': [-8, 0], 'icon-allow-overlap': true, 'icon-ignore-placement': true,
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 7, 0.7, 13, 1],
+      'text-field': ['step', ['zoom'], '', 10, ['get', 'n']], 'text-size': 11.5, 'text-anchor': 'top-left', 'text-offset': [0.3, 0.2], 'text-optional': true
+    },
+    paint: { 'icon-opacity': ['case', ['==', ['get', 'past'], 1], 0.55, 1], 'icon-emissive-strength': 1, 'text-color': '#4a3b57', 'text-halo-color': '#fff', 'text-halo-width': 1.4, 'text-emissive-strength': 1 }
   });
   map.addLayer({
     id: 'me', type: 'circle', source: 'me', slot: 'top',
@@ -261,6 +335,8 @@ function onMapClick(e) {
   // ピンは押しやすいように、押した所のまわり少し広めに探す
   const pad = 12;
   const box = [[e.point.x - pad, e.point.y - pad * 2], [e.point.x + pad, e.point.y + pad / 2]];
+  const pf = (map.queryRenderedFeatures(box, { layers: ['plans'] }) || []).find(f => f.properties && planById(f.properties.id));
+  if (pf) { const id = pf.properties.id; planFocus = id; refreshPlans(); showPlan(id); return; }
   const hit = map.queryRenderedFeatures(box, { layers: ['spots', 'spots-pin'] })
     .sort((a, b) => (b.properties.v || 0) - (a.properties.v || 0));
   if (hit && hit.length) { showSpot(hit[0].properties.id); return; }

@@ -1,4 +1,4 @@
-// main.js：起動（MeguMiru 版11）
+// main.js：起動（MeguMiru 版12）
 async function boot() {
   wireUi();
   wireIntro();
@@ -10,10 +10,17 @@ async function boot() {
   }
   await loadRec();
   await restorePrefs();
+  await loadPlans();                 // 版12：行き先ピン
   // 路線（途切れた間の駅の推定・乗った区間に使う）と線路の形。待たずに裏で
   loadLines().then(() => { if (curTab === 'zukan') renderZukan(); }).then(loadRails).then(() => refreshRides());
 
-  onSpotsChanged = () => { refreshSpots(); if (curTab === 'zukan') renderZukan(); };
+  onSpotsChanged = () => {
+    refreshSpots();
+    if (curTab === 'zukan') renderZukan();
+    if (curTab === 'plan') renderPlan();
+    if (!$('sheet').hidden && planOpen && $('plFly')) showPlan(planOpen);   // 行き先ピンの画面を開いていたら描き直す
+  };
+  onPlansChanged = () => { refreshPlans(); if (curTab === 'plan') renderPlan(); };
   onSegChanged = () => { refreshRides(); if (curTab === 'zukan' && zkShelf === 'ln') renderZukan(); };
   onRecChanged = (id) => {
     if (id[0] === 'c') refreshCity(); else refreshSpots();

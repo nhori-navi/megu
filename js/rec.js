@@ -320,7 +320,7 @@ function deleteRec(id) {
 
 // ---------- バックアップ ----------
 function backupData() {
-  return { app: 'MeguMiru', kind: 'all', v: 1, t: Date.now(), rec: REC, log: LOG, seg: SEG };
+  return { app: 'MeguMiru', kind: 'all', v: 1, t: Date.now(), rec: REC, log: LOG, seg: SEG, plans: typeof PLANS !== 'undefined' ? PLANS : [] };
 }
 
 function mergeBackup(js) {
@@ -342,6 +342,7 @@ function mergeBackup(js) {
   }
   const seen = new Set(LOG.map(e => e.t + '|' + e.id));
   for (const e of (js.log || [])) if (e && !seen.has(e.t + '|' + e.id)) LOG.push(e);
+  if (js.plans && typeof mergePlans === 'function') mergePlans(js.plans);   // 版12：行き先ピン
   for (const [k, r] of Object.entries(js.seg || {})) {
     if (!r || !r.f) continue;
     const m = SEG[k];
