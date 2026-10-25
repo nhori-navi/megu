@@ -1,4 +1,4 @@
-// flea.js：フリマの予定（MeguMiru 版13。版13.1：会場名も送って位置を探してもらう、分からなかった会場は1日ごとに聞き直す）
+// flea.js：フリマの予定（MeguMiru 版13。版13.2：「取り直す」で会場も聞き直す。版13.1：会場名も送って位置を探してもらう、分からなかった会場は1日ごとに聞き直す）
 // ・Cloudflare Workers に置いた「取り次ぎ役」（worker/flea-worker.js）に頼んで、リサイクル運動市民の会（本部・埼玉本部）の開催予定を受け取る
 // ・取り次ぎ役のアドレスと合言葉は設定で入れる（このスマホの中だけに置く）
 // ・頼むのは12時間に1回まで（「取り直す」を押したときは別）。会場の位置は会場ごとに1回だけ聞いて覚える
@@ -42,17 +42,17 @@ async function fleaFetch(force) {
     fleaErr = /Failed to fetch|NetworkError|Load failed/.test(String(e.message)) ? '取り次ぎ役につながりませんでした（アドレスを確かめてください）' : String(e.message || e);
   } finally { fleaBusy = false; }
   onFleaChanged();
-  await fleaVenues();
+  await fleaVenues(force);
 }
 
 // 位置の分からない会場を聞く（1回に12会場まで。分からなかった会場は1日後にもう一度。聞き方を変えた版13.1では、前に分からなかった会場もすぐ聞き直す）
 const FLEA_VREV = 2;
-async function fleaVenues() {
+async function fleaVenues(force) {   // force：「取り直す」を押したときは、分からなかった会場もすぐ聞き直す
   if (!FLEA || !fleaReady()) return;
   const nameOf = {};
   for (const e of FLEA.ev) if (!nameOf[e.vc]) nameOf[e.vc] = e.n;
   const need = Object.keys(nameOf)
-    .filter(vc => { const v = FLEA_V[vc]; return !v || (v.x == null && ((v.rev || 1) < FLEA_VREV || Date.now() - v.ft > 86400000)); }).slice(0, 12);
+    .filter(vc => { const v = FLEA_V[vc]; return !v || (v.x == null && (force || (v.rev || 1) < FLEA_VREV || Date.now() - v.ft > 86400000)); }).slice(0, 12);
   for (const vc of need) {
     try {
       const res = await fetch(fleaApi('/venue', { c: vc, n: nameOf[vc] }), { cache: 'no-store' });
