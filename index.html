@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#7a5c8e">
 <title>MeguMiru（メグミル）</title>
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
-<link href="style.css?v=11" rel="stylesheet">
+<link href="style.css?v=12" rel="stylesheet">
 </head>
 <body>
 
@@ -63,20 +63,16 @@
       <option value="done">行った</option>
       <option value="yet">まだ</option>
     </select>
-    <button id="zkMeijo" class="chip" type="button" hidden>🏯 名城だけ</button>
   </div>
-  <div id="zkAch"></div>
-  <div id="zkFilt"></div>
+  <div class="zkView"><button id="zkView" class="linkBtn" type="button">☰ 全部を並べる</button></div>
   <p id="zkStat"></p>
   <div id="zkList"></div>
 </section>
 
 <section class="panel" id="p-plan" hidden>
   <h2>📅 おでかけ計画</h2>
-  <div class="card">
-    <p class="big">準備中です</p>
-    <p class="note">次の段階で、地図に立てる「行き先ピン」と、フリーマーケットの予定表がここに入ります。</p>
-  </div>
+  <p class="note">地図を長押しする（パソコンは右クリック）と、行き先ピンを立てられます。フリーマーケットの予定は次の版で入ります。</p>
+  <div id="planList"></div>
 </section>
 
 <section class="panel" id="p-set" hidden>
@@ -158,17 +154,18 @@
 
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
 <script src="config.js"></script>
-<script src="js/base.js?v=11"></script>
+<script src="js/base.js?v=12"></script>
 <script src="js/data.js?v=11"></script>
-<script src="js/rec.js?v=11"></script>
-<script src="js/map.js?v=11"></script>
-<script src="js/zukan.js?v=11"></script>
+<script src="js/rec.js?v=12"></script>
+<script src="js/map.js?v=12"></script>
+<script src="js/zukan.js?v=12"></script>
 <script src="js/gpx.js?v=7"></script>
 <script src="js/michi.js?v=11"></script>
 <script src="js/near.js?v=11"></script>
 <script src="js/wiki.js?v=10"></script>
-<script src="js/ui.js?v=11"></script>
+<script src="js/plan.js?v=12"></script>
+<script src="js/ui.js?v=12"></script>
 <script src="js/help.js?v=1"></script>
-<script src="js/main.js?v=11"></script>
+<script src="js/main.js?v=12"></script>
 </body>
 </html>

@@ -231,3 +231,43 @@ a { color: var(--c); }
 .lnLink { border: 1px solid #c2416b; color: #c2416b; background: transparent; border-radius: 14px; padding: 4px 10px; font: inherit; font-size: 12px; }
 .delRow { text-align: right; margin: 10px 0 0; }
 .linkBtn { border: 0; background: none; color: var(--sub); text-decoration: underline; font: inherit; font-size: 12px; padding: 4px; }
+
+/* 版12：まとまりごとの一覧 */
+.zkView { text-align: right; margin: -2px 0 2px; }
+.zkView .linkBtn { color: var(--c); text-decoration: none; font-size: 13px; }
+.grp { background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px; overflow: hidden; }
+.grp.open { border-color: var(--sc, var(--c)); }
+.grpH { display: grid; grid-template-columns: 16px 1fr auto; column-gap: 6px; align-items: center; padding: 10px 12px 9px; cursor: pointer; }
+.grpA { color: var(--sub); font-size: 12px; }
+.grpN { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grpN small { margin-left: 6px; color: var(--sub); font-size: 11px; }
+.grpV { font-weight: 600; font-size: 15px; }
+.grpV small { font-weight: 400; color: var(--sub); font-size: 12px; }
+.grpH .bar { grid-column: 2 / -1; }
+.grp .bar i { background: var(--sc, var(--c)); }
+.grpL { margin: 0; border-width: 1px 0 0; border-radius: 0; box-shadow: none; }
+.grpL .row { padding-left: 22px; }
+.grpE { padding: 8px 14px; margin: 0; border-top: 1px solid var(--line); }
+.grp .grpMore { margin: 6px 12px 10px; width: calc(100% - 24px); }
+.grpYet { display: block; width: 100%; margin: 6px 0 8px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 12px; background: transparent; color: var(--sub); font: inherit; font-size: 14px; text-align: left; }
+
+/* 版12：計画タブ・行き先ピン */
+#p-plan h3 { margin: 14px 2px 6px; font-size: 14px; color: var(--sub); }
+.plans { list-style: none; margin: 0; padding: 0; }
+.plan { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; row-gap: 2px; background: var(--card); border: 1px solid var(--line); border-left: 4px solid #e0484f; border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
+.plan.past { border-left-color: #b9b2c0; opacity: .85; }
+.plan.nodate { border-left-color: #8e7aa3; }
+.plan.today { border-left-color: #e0484f; background: #fff4f4; }
+.pDate { font-weight: 600; font-size: 13px; color: #b23a40; white-space: nowrap; }
+.plan.past .pDate, .plan.nodate .pDate { color: var(--sub); }
+.pName { font-size: 15px; font-weight: 600; }
+.pName small { margin-left: 6px; font-weight: 400; color: var(--sub); font-size: 11px; }
+.pSum, .pMemo { grid-column: 1 / -1; font-size: 12.5px; color: var(--sub); }
+.pMemo { color: var(--ink); }
+.pMemoL { white-space: pre-wrap; background: var(--c-soft); border-radius: 8px; padding: 6px 10px; }
+.pd { margin: 8px 0; }
+.pd summary { cursor: pointer; padding: 6px 2px; font-weight: 600; font-size: 14px; }
+.pd .list { margin-top: 4px; }
+.fld { display: block; margin: 10px 0; font-size: 13px; color: var(--sub); }
+.fld input, .fld textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); font: inherit; font-size: 16px; }
+@media (prefers-color-scheme: dark) { .plan.today { background: #3a2427; } }
