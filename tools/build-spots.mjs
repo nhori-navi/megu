@@ -105,10 +105,10 @@ function cleanName0(n) {
   let t = String(n || '').trim();
   t = t.replace(/\s*[（(](古い|旧)[）)]\s*/g, '');
   t = t.replace(/\s*[:：]\s*.*$/, '');
-  t = t.replace(/\s*[（(][^（）()]*(→|->|=>|⇒|－|〜|~|上り|下り|方面|行き|方向|内回り|外回り)[^（）()]*[）)]\s*/g, '');
+  t = t.replace(/\s*[（(][^（）()]*(→|->|=>|⇒|↔|⇔|<->|－|〜|~|上り|下り|方面|行き|方向|内回り|外回り)[^（）()]*[）)]\s*/g, '');
   t = t.replace(/\s*[（(](上り|下り|内回り|外回り)[）)]\s*$/, '');
   t = t.replace(/\s+(上り|下り|内回り|外回り)$/, '');
-  t = t.replace(/\s+[^\s]+\s*(→|->|=>|⇒)\s*[^\s]+$/, '');
+  t = t.replace(/\s+[^\s]+\s*(→|->|=>|⇒|↔|⇔)\s*[^\s]+$/, '');
   t = t.replace(/\s+各駅停車$/, '');
   t = t.replace(/\s*\((inbound|outbound|outbond|northbound|southbound|eastbound|westbound)\)/ig, '');
   t = t.replace(/線(上り|下り)$/, '線');
@@ -123,15 +123,20 @@ const OPERATOR = [
   [/首都圏新都市鉄道|つくばエクスプレス/, 'つくばエクスプレス'], [/ゆりかもめ/, 'ゆりかもめ'], [/東京臨海高速鉄道|りんかい/, 'りんかい線'],
   [/東京モノレール/, '東京モノレール'], [/多摩都市モノレール/, '多摩モノレール'], [/横浜高速鉄道/, '横浜高速鉄道'],
   [/埼玉高速鉄道/, '埼玉高速鉄道'], [/北総/, '北総鉄道'], [/新京成/, '新京成'], [/江ノ島電鉄|江ノ電/, '江ノ電'],
-  [/富士山麓電気鉄道|富士急/, '富士急'], [/しなの鉄道/, 'しなの鉄道'], [/えちごトキめき/, 'えちごトキめき鉄道']
+  [/富士山麓電気鉄道|富士急/, '富士急'], [/しなの鉄道/, 'しなの鉄道'], [/えちごトキめき/, 'えちごトキめき鉄道'],
+  [/埼玉新都市交通|Saitama New Urban Transit/i, '埼玉新都市交通'], [/上毛電気|上毛電鉄/, '上毛電鉄'], [/千葉都市モノレール/, '千葉都市モノレール'],
+  [/山万/, '山万'], [/野岩鉄道/, '野岩鉄道'], [/流山|流鉄/, '流鉄'], [/秩父鉄道/, '秩父鉄道']
 ];
 function companyOf(tags, name) {
-  for (const v of [tags.operator, tags.network, name]) {
+  for (const v of [tags['operator:ja'], tags.operator, tags.network, name]) {
     if (!v) continue;
     for (const [re, n] of OPERATOR) if (re.test(v)) return n;
   }
-  if (/^JR/.test(name)) return 'JR東日本';
-  return tags.operator ? String(tags.operator).split(/[;；]/)[0] : 'その他';
+  if (/^JR|新幹線$|^(川越線|飯山線|吾妻線|上越線|篠ノ井線|八高線|総武本線|南武支線)$/.test(name)) return 'JR東日本';
+  const op = tags['operator:ja'] || tags.operator;
+  if (op && !/^[\x00-\x7f]+$/.test(op)) return String(op).split(/[;；]/)[0].replace(/株式会社|（株）|\(株\)/g, '').trim();
+  const m = /^(.+?(鉄道|鐵道|電鉄|電気鉄道|交通|モノレール))/.exec(name);   // 名前の頭から（関東鉄道常総線 → 関東鉄道）
+  return m ? m[1] : 'その他';
 }
 
 const ekey = (a, b) => (a < b ? a + '|' + b : b + '|' + a);
@@ -170,8 +175,10 @@ function groupLines(routes) {
   //    急行などで途中の駅を飛ばした区間は、同じまとまりに途中の駅のある並びがあれば区間にしない
   const groups = new Map();
   for (const rt of routes) {
-    if (!groups.has(rt.gname)) groups.set(rt.gname, { n: rt.gname, cos: {}, routes: [] });
-    const g = groups.get(rt.gname);
+    const key = rt.gname.replace(/^JR\s*/, '').replace(/[\s　]+/g, '');   // 「JR八高線」と「八高線」、「東京メトロ 丸ノ内線」などは同じ
+    if (!groups.has(key)) groups.set(key, { n: rt.gname, cos: {}, routes: [] });
+    const g = groups.get(key);
+    if (/^JR/.test(rt.gname) && !/^JR/.test(g.n)) g.n = rt.gname;      // 名前は JR の付いた方
     g.routes.push(rt); g.cos[rt.co] = (g.cos[rt.co] || 0) + rt.ids.length;
   }
   const posIn = ids => { const m = new Map(); ids.forEach((id, i) => { if (!m.has(id)) m.set(id, []); m.get(id).push(i); }); return m; };
@@ -303,7 +310,12 @@ async function buildLines() {
     }
     if (ids.length < 2) continue;
     const ms = masterOf.get(r.id);
-    const gname = cleanLineName(ms && ms.tags.name ? ms.tags.name : r.name);
+    // 名前：日本語の名前（name:ja）を先に。まとめ役（route_master）の名前が英語だけなら、路線の名前を使う
+    const ascii = v => !v || /^[\x00-\x7f]+$/.test(v);
+    const rn = r.tags['name:ja'] || r.name;
+    let mn = ms ? (ms.tags['name:ja'] || ms.tags.name) : null;
+    if (ascii(mn) && !ascii(rn)) mn = null;
+    const gname = cleanLineName(mn || rn);
     routes.push({ r, ids, stops, gname, co: companyOf(Object.assign({}, ms ? ms.tags : {}, r.tags), gname) });
     const k1 = ids.join(','), k2 = ids.slice().reverse().join(',');
     if (keys.has(k1) || keys.has(k2)) continue;   // 上りと下りの同じ並びは1本に（途切れた間の推定に使う並び）
@@ -426,7 +438,7 @@ async function buildLines() {
 // 日本100名城・続日本100名城のうち関東甲信越の41城。[番号, 名前, 都県, Wikipedia の記事名の候補]
 const MEIJO = [
   [14, '水戸城', '08', ['水戸城']], [15, '足利氏館', '09', ['足利氏館', '鑁阿寺']], [16, '箕輪城', '10', ['箕輪城']],
-  [17, '金山城', '10', ['金山城 (上野国)', '金山城']], [18, '鉢形城', '11', ['鉢形城']], [19, '川越城', '11', ['川越城']],
+  [17, '金山城', '10', ['金山城 (上野国)', '新田金山城', '金山城'], ['新田金山城', '金山城跡', '金山城']], [18, '鉢形城', '11', ['鉢形城']], [19, '川越城', '11', ['川越城']],
   [20, '佐倉城', '12', ['佐倉城']], [21, '江戸城', '13', ['江戸城']], [22, '八王子城', '13', ['八王子城']],
   [23, '小田原城', '14', ['小田原城']], [24, '武田氏館', '19', ['躑躅ヶ崎館', '武田氏館']], [25, '甲府城', '19', ['甲府城']],
   [26, '松代城', '20', ['松代城']], [27, '上田城', '20', ['上田城']], [28, '小諸城', '20', ['小諸城']],
@@ -474,7 +486,7 @@ async function buildMeijo() {
   const castles = all.filter(s => s.sh === 'hi' && s.sub === '城跡');
   const list = [];
   let fromOsm = 0, fromWiki = 0;
-  for (const [no, n, pc, ts] of MEIJO) {
+  for (const [no, n, pc, ts, osmNames] of MEIJO) {
     // Wikipedia の位置：候補の記事名を順に試し、その都県にあるものを使う
     let ref = null, wt = null;
     for (const t of ts) { const c = wc[t]; if (c && prefOfPoint(c.lon, c.lat) === pc) { ref = c; wt = t; break; } }
@@ -494,6 +506,7 @@ async function buildMeijo() {
       const exact = cand.filter(s => s.n.startsWith(n));
       if (cand.length === 1) hit = cand[0]; else if (exact.length === 1) hit = exact[0];
     }
+    if (!hit && osmNames) hit = castles.find(s => s.p === pc && osmNames.includes(s.n)) || null;   // 場所データでの名前が分かっている城
     if (hit) fromOsm++; else if (ref) fromWiki++;
     if (!hit && !ref) { console.log(`  ✗ ${n}：場所が分かりませんでした`); continue; }
     list.push({ no, n, p: pc, x: hit ? hit.x : Math.round(ref.lon * 1e5) / 1e5, y: hit ? hit.y : Math.round(ref.lat * 1e5) / 1e5, id: hit ? hit.id : null, on: hit ? hit.n : null, wt });
