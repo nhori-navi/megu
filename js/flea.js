@@ -1,11 +1,11 @@
-// flea.js：フリマの予定（MeguMiru 版13。版13.2：「取り直す」で会場も聞き直す。版13.1：会場名も送って位置を探してもらう、分からなかった会場は1日ごとに聞き直す）
+// flea.js：フリマの予定（MeguMiru 版13。版13.3：ウォーカープラスも（都県ごとに頼む）・何日も続く催し。版13.2：「取り直す」で会場も聞き直す。版13.1：会場名も送って位置を探してもらう、分からなかった会場は1日ごとに聞き直す）
 // ・Cloudflare Workers に置いた「取り次ぎ役」（worker/flea-worker.js）に頼んで、リサイクル運動市民の会（本部・埼玉本部）の開催予定を受け取る
 // ・取り次ぎ役のアドレスと合言葉は設定で入れる（このスマホの中だけに置く）
 // ・頼むのは12時間に1回まで（「取り直す」を押したときは別）。会場の位置は会場ごとに1回だけ聞いて覚える
 // ・★を付けると、その会場・日付で行き先ピンが立つ（★を外すとピンも消える）
 // ・地図には、2週間以内に開かれる会場を出す（中止は出さない）
 
-let FLEA = null;                 // {ft:受け取った時刻, t, ev:[{id, d, vc, n, url, src, st}], err}
+let FLEA = null;                 // {ft:受け取った時刻, t, ev:[{id, d, d2:終わりの日, vc, n, url, src:'rc'|'fs'|'wp', st, pn:都県名, loc:場所}], err}
 let FLEA_V = {};                 // 会場の番号 → {n, addr, x, y, ft, url}
 let fleaUrl = getLS('fleaurl', '');
 let fleaKey = getLS('fleakey', '');
@@ -36,7 +36,23 @@ async function fleaFetch(force) {
     const res = await fetch(fleaApi('/'), { cache: 'no-store' });
     const js = await res.json().catch(() => ({}));
     if (!res.ok || !Array.isArray(js.ev)) throw new Error(js.error || `取り次ぎ役が答えませんでした（${res.status}）`);
-    FLEA = { ft: Date.now(), t: js.t, ev: js.ev, err: js.err || [] };
+    const ev = js.ev, err = js.err || [];
+    // 版13.3：ウォーカープラスは都県ごとに頼む（取り次ぎ役が版13.3のときだけ答えに wp がある）
+    for (const ar of (js.wp || [])) {
+      try {
+        const r2 = await fetch(fleaApi('/wp', { a: ar }), { cache: 'no-store' });
+        const j2 = await r2.json().catch(() => ({}));
+        if (!r2.ok || !Array.isArray(j2.ev)) throw new Error(j2.error || `ウォーカープラス（${ar}）：${r2.status}`);
+        for (const e of j2.ev) {
+          // 同じ日に、リサイクル運動市民の会の会場名が名前や場所に入っていれば同じ催し
+          if (ev.some(o => o.src !== 'wp' && o.d === e.d && o.n && o.n.length >= 3 && (e.n.includes(o.n) || (e.loc || '').includes(o.n)))) continue;
+          ev.push(e);
+        }
+        err.push(...(j2.err || []));
+      } catch (e) { err.push(String(e.message || e)); }
+    }
+    ev.sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : a.n < b.n ? -1 : 1);
+    FLEA = { ft: Date.now(), t: js.t, ev, err };
     try { await DB.set('flea', FLEA); } catch (e) { /* 覚えられなくても使う */ }
   } catch (e) {
     fleaErr = /Failed to fetch|NetworkError|Load failed/.test(String(e.message)) ? '取り次ぎ役につながりませんでした（アドレスを確かめてください）' : String(e.message || e);
@@ -49,13 +65,14 @@ async function fleaFetch(force) {
 const FLEA_VREV = 2;
 async function fleaVenues(force) {   // force：「取り直す」を押したときは、分からなかった会場もすぐ聞き直す
   if (!FLEA || !fleaReady()) return;
-  const nameOf = {};
-  for (const e of FLEA.ev) if (!nameOf[e.vc]) nameOf[e.vc] = e.n;
+  const nameOf = {}, evOf = {};
+  for (const e of FLEA.ev) if (!nameOf[e.vc]) { nameOf[e.vc] = e.n; evOf[e.vc] = e; }
   const need = Object.keys(nameOf)
-    .filter(vc => { const v = FLEA_V[vc]; return !v || (v.x == null && (force || (v.rev || 1) < FLEA_VREV || Date.now() - v.ft > 86400000)); }).slice(0, 12);
+    .filter(vc => { const v = FLEA_V[vc]; return !v || (v.x == null && (force || (v.rev || 1) < FLEA_VREV || Date.now() - v.ft > 86400000)); }).slice(0, 30);
   for (const vc of need) {
     try {
-      const res = await fetch(fleaApi('/venue', { c: vc, n: nameOf[vc] }), { cache: 'no-store' });
+      const e = evOf[vc];
+      const res = await fetch(fleaApi('/venue', Object.assign({ c: vc, n: nameOf[vc] }, e.loc ? { a: e.loc } : {}, e.pn ? { p: e.pn } : {})), { cache: 'no-store' });
       const js = await res.json();
       if (!res.ok) throw new Error(js.error);
       FLEA_V[vc] = { n: js.n || '', addr: js.addr || '', x: js.x, y: js.y, url: js.url || '', why: js.why || [], ft: Date.now(), rev: FLEA_VREV };
@@ -69,11 +86,21 @@ async function fleaVenues(force) {   // force：「取り直す」を押した�
 function fleaEvents() {
   if (!FLEA) return [];
   const today = ymd(Date.now());
-  return FLEA.ev.filter(e => e.d >= today).map(e => {
+  const evs = FLEA.ev.filter(e => (e.d2 || e.d) >= today).map(e => {
     const v = FLEA_V[e.vc] || {};
-    const p = v.x != null ? prefOfPoint(v.x, v.y) : (PREFS.find(([, n]) => (v.addr || '').startsWith(n)) || [''])[0];
-    return Object.assign({}, e, { x: v.x, y: v.y, p, addr: v.addr || '' });
+    const p = (v.x != null && prefOfPoint(v.x, v.y)) || (PREFS.find(([, n]) => (v.addr || '').startsWith(n)) || PREFS.find(([, n]) => n === e.pn) || [''])[0];
+    // 何日も続く催しは、今日より前に始まっていても今日の分として並べる
+    const dd = e.d < today ? today : e.d;
+    return Object.assign({}, e, { x: v.x, y: v.y, p, addr: v.addr || '', dd, rough: (v.why || []).some(w => w.includes('市区町村の場所')) });
   });
+  // 位置が分かってから：同じ日の、800m以内の別の情報源の催しは1つに（ウォーカープラスの方を外す）
+  const keep = evs.filter(e => !(e.src === 'wp' && e.x != null && evs.some(o => o.src !== 'wp' && o.d === e.d && o.x != null && dist(o.x, o.y, e.x, e.y) < 800)));
+  return keep.sort((a, b) => a.dd < b.dd ? -1 : a.dd > b.dd ? 1 : a.n < b.n ? -1 : 1);
+}
+function fleaRange(e) {
+  if (!e.d2) return fleaDateLabel(e.d);
+  const f = d => { const t = new Date(d + 'T12:00:00'); return `${t.getMonth() + 1}/${t.getDate()}`; };
+  return `${f(e.d)}〜${f(e.d2)}`;
 }
 const fleaPlan = id => PLANS.find(p => p.fl === id);
 
@@ -96,7 +123,7 @@ function fleaStar(id) {
   }
   if (!e) return;
   if (e.x == null) { toast('会場の場所がまだ分かりません。少し待ってからもう一度押してください'); fleaVenues(); return; }
-  PLANS.push({ id: 'p' + Date.now().toString(36), n: 'フリマ：' + e.n, x: e.x, y: e.y, d: e.d, m: '', u: e.url, fl: e.id, t: Date.now() });
+  PLANS.push({ id: 'p' + Date.now().toString(36), n: 'フリマ：' + e.n, x: e.x, y: e.y, d: e.dd || e.d, m: e.d2 ? `開催：${fleaRange(e)}` : '', u: e.url, fl: e.id, t: Date.now() });
   savePlans();
   toast('★ 行き先ピンを立てました（計画の「行き先ピン」にあります）');
 }
@@ -119,15 +146,15 @@ function renderFlea(box) {
     const d = dOf(e);
     return `<li class="row flRow${e.st ? ' cancel' : ''}" data-vc="${esc(e.vc)}">`
       + `<button class="star${st ? ' on' : ''}" data-id="${esc(e.id)}" aria-label="★">${st ? '★' : '☆'}</button>`
-      + `<span class="nm">${showDate ? `<b class="flD">${esc(fleaDateLabel(e.d))}</b> ` : ''}${esc(e.n)}`
-      + `<small>${esc(PREF_NAME[e.p] || (e.x == null ? (FLEA_V[e.vc] && FLEA_V[e.vc].rev === FLEA_VREV ? '場所が分かりませんでした' : '場所を調べています') : ''))}${isFinite(d) ? '・ここから ' + fmtDist(d) : ''}${e.src === 'fs' ? '・埼玉本部' : ''}</small></span>`
+      + `<span class="nm">${showDate ? `<b class="flD">${esc(e.d2 ? fleaRange(e) : fleaDateLabel(e.d))}</b> ` : ''}${esc(e.n)}`
+      + `<small>${!showDate && e.d2 ? `<b class="flD">${esc(fleaRange(e))}</b>・` : ''}${esc(PREF_NAME[e.p] || (e.x == null ? (FLEA_V[e.vc] && FLEA_V[e.vc].rev === FLEA_VREV ? '場所が分かりませんでした' : '場所を調べています') : ''))}${e.loc && e.src === 'wp' ? '・' + esc(e.loc) : ''}${isFinite(d) ? '・ここから ' + (e.rough ? '約' : '') + fmtDist(d) : ''}${e.src === 'fs' ? '・埼玉本部' : e.src === 'wp' ? '・ウォーカープラス' : ''}</small></span>`
       + `<span class="st">${e.st ? `<span class="badge flSt">${esc(e.st)}</span>` : ''}<a class="flLink" href="${esc(e.url)}" target="_blank" rel="noopener">案内</a></span></li>`;
   };
   let list = '';
   if (fleaSort === 'date') {
     let cur = '', open = false;
     for (const e of evs) {
-      if (e.d !== cur) { if (open) list += '</ul>'; list += `<h3 class="flH">${esc(fleaDateLabel(e.d))}</h3><ul class="list">`; cur = e.d; open = true; }
+      if (e.dd !== cur) { if (open) list += '</ul>'; list += `<h3 class="flH">${esc(fleaDateLabel(e.dd))}</h3><ul class="list">`; cur = e.dd; open = true; }
       list += row(e, false);
     }
     if (open) list += '</ul>';
@@ -138,7 +165,7 @@ function renderFlea(box) {
     + `<p class="note flStat">${fleaBusy ? '受け取っています…' : esc(fleaErr) || `${evs.length}件　${got}`}　<button class="linkBtn" id="flReload">取り直す</button></p>`
     + (FLEA && FLEA.err && FLEA.err.length ? `<p class="note">一部のページを読めませんでした（${FLEA.err.length}件）</p>` : '')
     + (list || (FLEA ? '<p class="note">該当するフリマはありません。</p>' : ''))
-    + '<p class="note">☆を押すと、その会場と日付で行き先ピンが立ちます。出典：リサイクル運動市民の会。出店や中止は、必ず元の案内で確かめてください。</p>';
+    + '<p class="note">☆を押すと、その会場と日付で行き先ピンが立ちます。出典：リサイクル運動市民の会・ウォーカープラス（私的利用の範囲で表示しています）。出店や中止は、必ず元の案内で確かめてください。</p>';
   $('flPref').onchange = e => { fleaPref = e.target.value; setLS('fleapref', fleaPref); renderPlan(); };
   $('flSort').onchange = e => { fleaSort = e.target.value; setLS('fleasort', fleaSort); renderPlan(); };
   $('flReload').onclick = () => fleaFetch(true);
@@ -155,7 +182,7 @@ function showFleaVenue(vc) {
   $('sheetBody').innerHTML = `<div class="shHead" style="--sc:${SHELVES.fl.color}"><span class="shIcon">🛍</span><div><h3>${esc(name)}</h3><p class="sub">フリーマーケット${v.addr ? '・' + esc(v.addr) : ''}</p></div></div>`
     + (evs.length ? `<ul class="list">${evs.map(e => {
       const st = !!fleaPlan(e.id);
-      return `<li class="row"><button class="star${st ? ' on' : ''}" data-id="${esc(e.id)}">${st ? '★' : '☆'}</button><span class="nm">${esc(fleaDateLabel(e.d))}</span><span class="st">${e.st ? `<span class="badge flSt">${esc(e.st)}</span>` : ''}<a class="flLink" href="${esc(e.url)}" target="_blank" rel="noopener">案内</a></span></li>`;
+      return `<li class="row"><button class="star${st ? ' on' : ''}" data-id="${esc(e.id)}">${st ? '★' : '☆'}</button><span class="nm">${esc(e.d2 ? fleaRange(e) : fleaDateLabel(e.d))}</span><span class="st">${e.st ? `<span class="badge flSt">${esc(e.st)}</span>` : ''}<a class="flLink" href="${esc(e.url)}" target="_blank" rel="noopener">案内</a></span></li>`;
     }).join('')}</ul>` : '<p class="note">これからの予定はありません</p>')
     + '<p class="hint">☆を押すと、その日の行き先ピンが立ち、まわり5kmのまだ行っていない場所も見られます</p>'
     + `<div class="btnRow">${v.x != null ? '<button class="btn primary" id="flFly">地図で見る</button>' : ''}${v.x != null ? `<a class="btn" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${v.y},${v.x}">Googleマップ</a>` : ''}</div>`;
@@ -170,10 +197,10 @@ function fleaGeo() {
   const lim = ymd(Date.now() + FLEA_MAP_DAYS * 86400000);
   const by = new Map();
   for (const e of fleaEvents()) {
-    if (e.st === '中止' || e.x == null || e.d > lim) continue;
+    if (e.st === '中止' || e.x == null || e.dd > lim) continue;
     if (!by.has(e.vc)) by.set(e.vc, e);
   }
-  return { type: 'FeatureCollection', features: [...by.values()].map(e => ({ type: 'Feature', properties: { vc: e.vc, n: `${e.n} ${fleaDateLabel(e.d).replace('今日 ', '今日')}` }, geometry: { type: 'Point', coordinates: [e.x, e.y] } })) };
+  return { type: 'FeatureCollection', features: [...by.values()].map(e => ({ type: 'Feature', properties: { vc: e.vc, n: `${e.n} ${(e.d2 ? fleaRange(e) : fleaDateLabel(e.d)).replace('今日 ', '今日')}` }, geometry: { type: 'Point', coordinates: [e.x, e.y] } })) };
 }
 
 // ---------- 設定 ----------
