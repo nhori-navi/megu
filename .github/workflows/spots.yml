@@ -35,10 +35,12 @@ jobs:
       - name: 駅・道の駅・ミュージアム・史跡と、鉄道の路線を抜き出す
         run: |
           for r in kanto chubu; do
-            osmium tags-filter tmp/$r.osm.pbf n/railway=station,halt nwr/highway=rest_area,services nwr/tourism=museum nwr/historic=castle,archaeological_site,tomb,ruins nwr/leisure=park -o tmp/$r-f.osm.pbf --overwrite
+            osmium tags-filter tmp/$r.osm.pbf n/railway=station,halt,tram_stop nwr/highway=rest_area,services nwr/tourism=museum nwr/historic=castle,archaeological_site,tomb,ruins nwr/leisure=park -o tmp/$r-f.osm.pbf --overwrite
             osmium export tmp/$r-f.osm.pbf -f geojsonseq -a type,id -o tmp/$r.geojsonseq --overwrite
-            osmium tags-filter tmp/$r.osm.pbf r/route=train,subway,light_rail,monorail,railway -o tmp/$r-r.osm.pbf --overwrite
-            osmium cat tmp/$r-r.osm.pbf -f opl -o tmp/$r-routes.opl --overwrite
+            osmium tags-filter tmp/$r.osm.pbf r/route=train,subway,light_rail,monorail,railway,tram r/route_master=train,subway,light_rail,monorail,railway,tram -o tmp/$r-r.osm.pbf --overwrite
+            osmium add-locations-to-ways tmp/$r-r.osm.pbf -o tmp/$r-rl.osm.pbf --overwrite
+            osmium cat tmp/$r-rl.osm.pbf -f opl,locations_on_ways=true -o tmp/$r-routes.opl --overwrite
+            ls -lh tmp/$r-routes.opl
             wc -l tmp/$r.geojsonseq tmp/$r-routes.opl
           done
       - name: 10都県のデータを作る
@@ -51,4 +53,5 @@ jobs:
           git add data/spots-*.json || true
           git add data/lines.json || true
           git add data/meijo.json || true
+          git add data/rails.json || true
           if git diff --cached --quiet; then echo "変更なし"; else git commit -m "場所データを更新" && git push; fi
