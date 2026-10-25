@@ -1,4 +1,4 @@
-// flea.js：フリマの予定（MeguMiru 版13）
+// flea.js：フリマの予定（MeguMiru 版13。版13.1：会場名も送って位置を探してもらう、分からなかった会場は1日ごとに聞き直す）
 // ・Cloudflare Workers に置いた「取り次ぎ役」（worker/flea-worker.js）に頼んで、リサイクル運動市民の会（本部・埼玉本部）の開催予定を受け取る
 // ・取り次ぎ役のアドレスと合言葉は設定で入れる（このスマホの中だけに置く）
 // ・頼むのは12時間に1回まで（「取り直す」を押したときは別）。会場の位置は会場ごとに1回だけ聞いて覚える
@@ -45,18 +45,22 @@ async function fleaFetch(force) {
   await fleaVenues();
 }
 
-// 位置の分からない会場を聞く（1回に12会場まで。分からなかった会場は7日後にもう一度）
+// 位置の分からない会場を聞く（1回に12会場まで。分からなかった会場は1日後にもう一度。聞き方を変えた版13.1では、前に分からなかった会場もすぐ聞き直す）
+const FLEA_VREV = 2;
 async function fleaVenues() {
   if (!FLEA || !fleaReady()) return;
-  const need = [...new Set(FLEA.ev.map(e => e.vc))]
-    .filter(vc => { const v = FLEA_V[vc]; return !v || (v.x == null && Date.now() - v.ft > 7 * 86400000); }).slice(0, 12);
+  const nameOf = {};
+  for (const e of FLEA.ev) if (!nameOf[e.vc]) nameOf[e.vc] = e.n;
+  const need = Object.keys(nameOf)
+    .filter(vc => { const v = FLEA_V[vc]; return !v || (v.x == null && ((v.rev || 1) < FLEA_VREV || Date.now() - v.ft > 86400000)); }).slice(0, 12);
   for (const vc of need) {
     try {
-      const res = await fetch(fleaApi('/venue', { c: vc }), { cache: 'no-store' });
+      const res = await fetch(fleaApi('/venue', { c: vc, n: nameOf[vc] }), { cache: 'no-store' });
       const js = await res.json();
       if (!res.ok) throw new Error(js.error);
-      FLEA_V[vc] = { n: js.n || '', addr: js.addr || '', x: js.x, y: js.y, url: js.url || '', ft: Date.now() };
-    } catch (e) { FLEA_V[vc] = { x: null, y: null, ft: Date.now() }; }
+      FLEA_V[vc] = { n: js.n || '', addr: js.addr || '', x: js.x, y: js.y, url: js.url || '', why: js.why || [], ft: Date.now(), rev: FLEA_VREV };
+    } catch (e) { FLEA_V[vc] = { x: null, y: null, ft: Date.now(), rev: FLEA_VREV }; }
+    onFleaChanged();
   }
   if (need.length) { try { await DB.set('fleavenue', FLEA_V); } catch (e) { /* なし */ } onFleaChanged(); }
 }
@@ -116,7 +120,7 @@ function renderFlea(box) {
     return `<li class="row flRow${e.st ? ' cancel' : ''}" data-vc="${esc(e.vc)}">`
       + `<button class="star${st ? ' on' : ''}" data-id="${esc(e.id)}" aria-label="★">${st ? '★' : '☆'}</button>`
       + `<span class="nm">${showDate ? `<b class="flD">${esc(fleaDateLabel(e.d))}</b> ` : ''}${esc(e.n)}`
-      + `<small>${esc(PREF_NAME[e.p] || (e.x == null ? '場所を調べています' : ''))}${isFinite(d) ? '・ここから ' + fmtDist(d) : ''}${e.src === 'fs' ? '・埼玉本部' : ''}</small></span>`
+      + `<small>${esc(PREF_NAME[e.p] || (e.x == null ? (FLEA_V[e.vc] && FLEA_V[e.vc].rev === FLEA_VREV ? '場所が分かりませんでした' : '場所を調べています') : ''))}${isFinite(d) ? '・ここから ' + fmtDist(d) : ''}${e.src === 'fs' ? '・埼玉本部' : ''}</small></span>`
       + `<span class="st">${e.st ? `<span class="badge flSt">${esc(e.st)}</span>` : ''}<a class="flLink" href="${esc(e.url)}" target="_blank" rel="noopener">案内</a></span></li>`;
   };
   let list = '';
