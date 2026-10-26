@@ -1,4 +1,4 @@
-// ui.js：画面の切り替え・今日・設定（MeguMiru 版14：ホーム画面のアプリ。版13：フリマ。版12：計画タブ。版11：路線の棚・乗った区間。版10：一言説明。版9：月のふりかえり・MichiMiru の記録・近づいたら知らせる）
+// ui.js：画面の切り替え・今日・設定（MeguMiru 版15：今日の混雑の目安。版14：ホーム画面のアプリ。版13：フリマ。版12：計画タブ。版11：路線の棚・乗った区間。版10：一言説明。版9：月のふりかえり・MichiMiru の記録・近づいたら知らせる）
 let curTab = 'map';
 
 function showTab(t) {
@@ -136,6 +136,12 @@ function renderToday() {
   const segN = Object.values(SEG).filter(r => ymd(r.f) === day).length;     // 版11：はじめて乗った区間
   if (segN) cnt.ln = segN;
   const sum = ZK_ORDER.filter(k => cnt[k]).map(k => `${SHELVES[k].icon} ${SHELVES[k].name} ${cnt[k]}${k === 'ln' ? '区間' : ''}`).join('　');
+  // 版15：今日の画面だけ、混雑の目安と近くの催し
+  const evBox = $('todayEv');
+  if (evBox) {
+    evBox.innerHTML = isToday ? eventsTodayHtml() : '';
+    evBox.querySelectorAll('li[data-vc]').forEach(li => li.onclick = () => showFleaVenue(li.dataset.vc));
+  }
   $('todaySum').innerHTML = ev.length || segN
     ? `<p class="big">${label}のはじめて：${Object.entries(cnt).filter(([k]) => k !== 'ln').reduce((a, [, b]) => a + b, 0)}</p><p>${sum || 'はじめての場所はありません'}</p>`
     : (isToday ? '<p class="big">今日の記録はまだありません</p><p class="note">アプリを開いたまま出かけると、通った駅や入った市区町村がここに並びます。閉じていた間の分は、設定から GPX を読み込めます。</p>'

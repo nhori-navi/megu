@@ -1,5 +1,5 @@
-// base.js：共通の定数と道具（MeguMiru 版14）
-const APP_VER = 14;
+// base.js：共通の定数と道具（MeguMiru 版15）
+const APP_VER = 15;
 
 // 5つの棚
 const SHELVES = {
@@ -9,7 +9,7 @@ const SHELVES = {
   mu:   { name: 'ミュージアム', icon: '🏛️', color: '#c0782f' },
   hi:   { name: '史跡',       icon: '🏯', color: '#8b5e3c' },
   ln:   { name: '路線',       icon: '🚃', color: '#c2416b' },     // 版11：路線の乗りつぶし（場所ではなく区間を集める）
-  fl:   { name: 'フリマ',     icon: '🛍', color: '#d9822b' }      // 版13：フリマ（集める棚ではなく、地図の切り替えだけ）
+  fl:   { name: '催し',       icon: '🎪', color: '#d9822b' }      // 版13：フリマ → 版15：催し（集める棚ではなく、地図の切り替えだけ）
 };
 const SHELF_ORDER = ['st', 'city', 'mi', 'mu', 'hi'];   // 場所の棚
 const ZK_ORDER = ['st', 'city', 'mi', 'mu', 'hi', 'ln'];  // 図鑑に出す棚

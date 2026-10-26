@@ -1,4 +1,4 @@
-// map.js：地図（MeguMiru 版12：行き先ピン（長押しで立てる・旗の印・5kmの円）。版11：乗った区間を線路の形で。版8.1：まだの所は薄い丸、行った所は塗りつぶしのピン、通過は白抜きのピン、推定の通過は点線の白抜き）
+// map.js：地図（MeguMiru 版15：催しのジャンルごとの印。版12：行き先ピン（長押しで立てる・旗の印・5kmの円）。版11：乗った区間を線路の形で。版8.1：まだの所は薄い丸、行った所は塗りつぶしのピン、通過は白抜きのピン、推定の通過は点線の白抜き）
 let map = null;
 let mapReady = false;
 let follow = true;
@@ -70,18 +70,22 @@ function addPlanImage() {
 let planFocus = null;
 // 版13：フリマの会場の印
 function addFleaImage() {
-  if (map.hasImage && map.hasImage('pin-flea')) return;
-  const R = 2, W = 26, H = 26;
-  const cv = document.createElement('canvas');
-  cv.width = W * R; cv.height = H * R;
-  const g = cv.getContext('2d');
-  g.scale(R, R);
-  g.shadowColor = 'rgba(0,0,0,0.3)'; g.shadowBlur = 2; g.shadowOffsetY = 1;
-  g.beginPath(); g.arc(13, 13, 11, 0, Math.PI * 2); g.fillStyle = SHELVES.fl.color; g.fill();
-  g.shadowColor = 'transparent'; g.lineWidth = 2; g.strokeStyle = '#fff'; g.stroke();
-  g.font = '12px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
-  g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🛍', 13, 13.5);
-  map.addImage('pin-flea', g.getImageData(0, 0, cv.width, cv.height), { pixelRatio: R });
+  // 版15：催しのジャンルごとの丸（色と絵柄）
+  for (const gg of EV_G) {
+    const id = 'pin-ev-' + gg.k;
+    if (map.hasImage && map.hasImage(id)) continue;
+    const R = 2, W = 26, H = 26;
+    const cv = document.createElement('canvas');
+    cv.width = W * R; cv.height = H * R;
+    const g = cv.getContext('2d');
+    g.scale(R, R);
+    g.shadowColor = 'rgba(0,0,0,0.3)'; g.shadowBlur = 2; g.shadowOffsetY = 1;
+    g.beginPath(); g.arc(13, 13, 11, 0, Math.PI * 2); g.fillStyle = gg.color; g.fill();
+    g.shadowColor = 'transparent'; g.lineWidth = 2; g.strokeStyle = '#fff'; g.stroke();
+    g.font = '12px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(gg.icon, 13, 13.5);
+    map.addImage(id, g.getImageData(0, 0, cv.width, cv.height), { pixelRatio: R });
+  }
 }
 function refreshFlea() {
   if (!mapReady) return;
@@ -223,7 +227,7 @@ function setupLayers() {
   addFleaImage();
   map.addLayer({
     id: 'flea', type: 'symbol', source: 'flea', slot: 'top',
-    layout: { 'icon-image': 'pin-flea', 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 7, 0.7, 13, 1],
+    layout: { 'icon-image': ['concat', 'pin-ev-', ['get', 'gk']], 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 7, 0.7, 13, 1],
       'text-field': ['step', ['zoom'], '', 11, ['get', 'n']], 'text-size': 11, 'text-anchor': 'top', 'text-offset': [0, 0.9], 'text-optional': true },
     paint: { 'icon-emissive-strength': 1, 'text-color': '#8a4b10', 'text-halo-color': '#fff', 'text-halo-width': 1.3, 'text-emissive-strength': 1 }
   });

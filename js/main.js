@@ -22,7 +22,7 @@ async function boot() {
     if (!$('sheet').hidden && planOpen && $('plFly')) showPlan(planOpen);   // 行き先ピンの画面を開いていたら描き直す
   };
   onPlansChanged = () => { refreshPlans(); if (curTab === 'plan') renderPlan(); };
-  onFleaChanged = () => { refreshFlea(); if (curTab === 'plan') renderPlan(); if (curTab === 'set') renderFleaSettings(); };
+  onFleaChanged = () => { refreshFlea(); if (curTab === 'plan') renderPlan(); if (curTab === 'set') renderFleaSettings(); if (curTab === 'today') renderToday(); };
   setTimeout(() => fleaFetch(), 2500);   // 12時間たっていれば受け取り直す
   onSegChanged = () => { refreshRides(); if (curTab === 'zukan' && zkShelf === 'ln') renderZukan(); };
   onRecChanged = (id) => {
