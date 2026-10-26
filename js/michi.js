@@ -1,4 +1,7 @@
 // michi.js：MichiMiru の歩いた記録を、そのまま読んで判定する（MeguMiru 版9。版11：乗った区間の拾い直し segOnly）
+// 版16：MichiMiru 版21 から、記録は大きな置き場（IndexedDB 'michimiru' → 'kv' → 'tracks'）に移った。両方を読んで合わせる。
+//   保存のたびに localStorage 'walk_trk_rev' に時刻が書かれるので、それで「変わった」と分かる
+//   記録に ts（各点の時刻：始まりからの秒）があればそれを使う。ses（歩行の始まり）が歩いている途中の歩行と同じなら終わってから読む
 // ・MichiMiru は同じアドレス（nhori-navi.github.io）の端末内の置き場 'walk_tracks' に記録を保存している。それを読むだけで、MichiMiru 側は何も変えない
 // ・記録の形：{k:'walk'|'veh', t0:始めた時刻, t1:終えた時刻, pts:[[経度,緯度],…], mode:'train'|'car'（手で直したとき）, src:GPX のファイル名}
 //   点ごとの時刻はないので、始めと終わりの時刻を距離で割り振る
@@ -14,13 +17,46 @@ let michiSig = '';          // 前に読んだときの記録の大きさ（変�
 
 const michiKey = t => `${t.t0}|${t.k || 'walk'}|${t.pts[0]}`;
 
-function michiRead() {
+// 変わったかどうかの目印（大きな置き場の保存の時刻＋小さな置き場の大きさと末尾）
+function michiSigNow() {
+  let rev = '', raw = '';
+  try { rev = localStorage.getItem('walk_trk_rev') || ''; raw = localStorage.getItem('walk_tracks') || ''; } catch (e) { /* なし */ }
+  return rev + '|' + raw.length + '|' + raw.slice(-64);
+}
+// 大きな置き場の記録（ないときは空。MeguMiru からは作らない）
+function michiReadDb() {
+  return new Promise(res => {
+    let r;
+    try { r = indexedDB.open('michimiru'); } catch (e) { res([]); return; }
+    r.onupgradeneeded = () => { try { r.transaction.abort(); } catch (e) { /* なし */ } };   // まだない：作らずにやめる
+    r.onerror = () => res([]);
+    r.onblocked = () => res([]);
+    r.onsuccess = () => {
+      const db = r.result;
+      try {
+        if (!db.objectStoreNames.contains('kv')) { db.close(); res([]); return; }
+        const q = db.transaction('kv', 'readonly').objectStore('kv').get('tracks');
+        q.onsuccess = () => { db.close(); res(Array.isArray(q.result) ? q.result : []); };
+        q.onerror = () => { db.close(); res([]); };
+      } catch (e) { db.close(); res([]); }
+    };
+  });
+}
+async function michiRead() {
+  let ls = [];
   try {
     const raw = localStorage.getItem('walk_tracks');
-    if (!raw) return { raw: '', tracks: [] };
-    const tr = JSON.parse(raw);
-    return { raw, tracks: Array.isArray(tr) ? tr : [] };
-  } catch (e) { return { raw: '', tracks: [] }; }
+    if (raw) { const tr = JSON.parse(raw); if (Array.isArray(tr)) ls = tr; }
+  } catch (e) { /* なし */ }
+  const db = await michiReadDb();
+  // 同じ記録は1つに（点の多い方）
+  const map = new Map();
+  for (const t of db.concat(ls)) {
+    if (!t || !Array.isArray(t.pts) || !t.pts.length) continue;
+    const k = michiKey(t), o = map.get(k);
+    if (!o || t.pts.length > o.pts.length) map.set(k, t);
+  }
+  return { tracks: [...map.values()] };
 }
 
 function michiOngoing() {
@@ -37,6 +73,8 @@ function michiTimed(t) {
   for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + dist(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]));
   const total = cum[cum.length - 1];
   const end = (typeof t.t1 === 'number' && t.t1 > t.t0) ? t.t1 : t.t0 + total / (80 / 60) * 1000;
+  // 版16：各点の時刻があればそれを使う（止まっていた時間も分かる）
+  if (Array.isArray(t.ts) && t.ts.length === pts.length) return pts.map((p, i) => ({ x: p[0], y: p[1], t: t.t0 + t.ts[i] * 1000 }));
   return pts.map((p, i) => ({ x: p[0], y: p[1], t: Math.round(t.t0 + (total > 0 ? (end - t.t0) * cum[i] / total : 0)) }));
 }
 
@@ -83,17 +121,18 @@ function michiMuseumGap(a, b, ctx) {
 async function michiSync(onStatus, opt) {
   const segOnly = !!(opt && opt.segOnly);
   if (!michiOn || michiBusy) return null;
-  const { raw, tracks } = michiRead();
-  const sig = raw.length + '|' + raw.slice(-64);
+  const sig = michiSigNow();
   if (!segOnly && sig === michiSig) return null;          // 前に読んだときから変わっていない
   michiBusy = true;
   const res = { tracks: 0, points: 0, count: { new: 0, up: 0, again: 0, est: 0 }, from: null, to: null };
   try {
+    const { tracks } = await michiRead();
     const done = (await DB.get('michidone')) || {};
     const ongoing = michiOngoing();
     const list = tracks.filter(t => t && Array.isArray(t.pts) && t.pts.length && Number.isFinite(t.t0)).sort((a, b) => a.t0 - b.t0);
     const unread = segOnly ? list : list.filter(t => (done[michiKey(t)] || 0) < t.pts.length);
-    const todo = unread.filter(t => !(t.k !== 'veh' && t.t0 === ongoing));
+    // 歩いている途中の記録（版16：乗り物の区間も、その歩行のもの〔ses〕は）は終わってから読む
+    const todo = unread.filter(t => !(ongoing != null && ((t.k !== 'veh' && t.t0 === ongoing) || t.ses === ongoing)));
     const waiting = todo.length < unread.length;           // 歩いている途中の記録がある（終わってから読む）
     if (!todo.length) { if (!waiting && !segOnly) michiSig = sig; return res; }
 

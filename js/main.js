@@ -1,6 +1,13 @@
-// main.js：起動（MeguMiru 版14：ホーム画面のアプリ）
+// main.js：起動（MeguMiru 版14：ホーム画面のアプリ。版16：MichiMiru アプリの中で開く）
 async function boot() {
   wireUi();
+  // 版16：MichiMiru アプリの中では、地図の右のボタンのいちばん上に「🚶」（MichiMiru に戻る）
+  if (IN_MICHI && $('mapBtns')) {
+    const b = document.createElement('button');
+    b.id = 'mMichi'; b.type = 'button'; b.title = 'MichiMiru に戻る'; b.textContent = '🚶';
+    b.onclick = () => { try { window.parent.meguClose(); } catch (e) { /* なし */ } };
+    $('mapBtns').prepend(b);
+  }
   wireIntro();
   updRecPill();
   try {
@@ -52,7 +59,8 @@ async function boot() {
   // 版9：MichiMiru の記録を読む（開いたとき・画面に戻ったとき・別のタブで記録が変わったとき）
   runMichi(1500);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') runMichi(500); });
-  window.addEventListener('storage', e => { if (e.key === 'walk_tracks') runMichi(1000); });
+  // 版16：MichiMiru 版21 からは 'walk_trk_rev'（大きな置き場に保存した時刻）が変わる
+  window.addEventListener('storage', e => { if (e.key === 'walk_tracks' || e.key === 'walk_trk_rev') runMichi(1000); });
 }
 
 window.addEventListener('DOMContentLoaded', boot);
@@ -65,8 +73,9 @@ window.addEventListener('appinstalled', () => { installEv = null; toast('ホー�
 function renderPwa() {
   const st = $('pwaStatus'), b = $('btnInstall');
   if (!st) return;
-  st.textContent = isStandalone() ? '📱 ホーム画面のアプリとして開いています' : installEv ? 'このスマホのホーム画面に置けます' : 'Chrome で開いています';
-  b.hidden = !installEv || isStandalone();
+  st.textContent = IN_MICHI ? '📱 MichiMiru アプリの中で開いています（地図の「🚶」で MichiMiru に戻ります）'
+    : isStandalone() ? '📱 ホーム画面のアプリとして開いています' : installEv ? 'このスマホのホーム画面に置けます' : 'Chrome で開いています';
+  b.hidden = IN_MICHI || !installEv || isStandalone();
   b.onclick = async () => { if (!installEv) return; installEv.prompt(); try { await installEv.userChoice; } catch (e) { /* なし */ } installEv = null; renderPwa(); };
 }
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || /[?&]swtest/.test(location.search))) {

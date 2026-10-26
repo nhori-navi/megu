@@ -191,10 +191,15 @@ function renderSettings() {
 }
 
 function exportBackup() {
-  const blob = new Blob([JSON.stringify(backupData())], { type: 'application/json' });
+  const txt = JSON.stringify(backupData()), name = 'megumiru-kiroku-' + ymd(Date.now()).replace(/-/g, '') + '.json';
+  // 版16：MichiMiru アプリの中ではダウンロードが使えないので、MichiMiru に頼んでスマホの Documents に保存する
+  if (IN_MICHI) {
+    try { if (window.parent.nativeSaveFile(name, txt, (ok, m) => { toast(m, 4500); if (ok) setLS('bklast', Date.now()); })) return; } catch (e) { /* いつもの書き出しへ */ }
+  }
+  const blob = new Blob([txt], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'megumiru-kiroku-' + ymd(Date.now()).replace(/-/g, '') + '.json';
+  a.download = name;
   document.body.appendChild(a);
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
