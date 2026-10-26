@@ -1,4 +1,6 @@
-// flea-worker.js：MeguMiru のフリマの取り次ぎ役（Cloudflare Workers に貼るプログラム。版13.3）
+// flea-worker.js：MeguMiru のフリマの取り次ぎ役（Cloudflare Workers に貼るプログラム。版15）
+// 版15：ウォーカープラスのフリマ以外のジャンル（お祭り・花火・音楽・スポーツなど）も読む。ジャンルの一覧はウォーカープラスのページから拾う（/wpg）
+//   イベントのページは、アプリが「詳しく調べて」と言ったときだけ読む（x=1。近い日の催しや混みそうな催しだけ）
 // 版13.3：ウォーカープラスの10都県のフリマ一覧も読む（私的利用の範囲。robots.txt で止められている場所は読まない）
 // 版13.1：会場のページが Shift_JIS などでも読めるように。住所が取れない・位置が分からないときは、会場名で OpenStreetMap（Nominatim）に聞く
 // ・アプリから頼まれたら、リサイクル運動市民の会（本部・埼玉本部）の開催予定を読みに行き、日付・会場・元のページへのリンクに整えて返す
@@ -8,8 +10,9 @@
 //
 // 使い方（アプリから）
 //   GET https://（このプログラムのアドレス）/?k=合言葉            → 開催予定 {v, t, ev:[…], err:[…]}
-//   GET https://（このプログラムのアドレス）/wp?a=ar0313&k=合言葉 → ウォーカープラスのその都県のフリマ {v, ar, ev:[…], err}
-//   GET https://（このプログラムのアドレス）/venue?c=rc-013&n=会場名&a=場所&p=都県&k=合言葉 → 会場の住所と位置 {c, n, addr, x, y, why}
+//   GET https://（このプログラムのアドレス）/wp?a=ar0313&g=eg0115&k=合言葉 → ウォーカープラスのその都県・そのジャンルの催し {v, ar, g, ev:[…], err}
+//   GET https://（このプログラムのアドレス）/wpg?a=ar0313&k=合言葉 → ウォーカープラスのジャンルの一覧 {list:[{g, n}]}
+//   GET https://（このプログラムのアドレス）/venue?c=rc-013&n=会場名&a=場所&p=都県&x=1&k=合言葉 → 会場の住所と位置 {c, n, addr, x, y, why}（x=0 なら市区町村まで）
 
 const RC = 'https://www2.recycler.jp/';      // リサイクル運動市民の会（東京・神奈川・千葉）
 const FS = 'https://furima-s.com/';          // 同 埼玉本部
@@ -28,8 +31,10 @@ export default {
     if (!env.KEY) return json({ error: '合言葉（KEY）が Cloudflare に設定されていません' }, 500, cors);
     if (url.searchParams.get('k') !== env.KEY) return json({ error: '合言葉がちがいます' }, 403, cors);
     try {
-      if (url.pathname === '/wp') return json(await wpEvents(url.searchParams.get('a') || ''), 200, cors);
-      if (url.pathname === '/venue') return json(await venue(url.searchParams.get('c') || '', url.searchParams.get('n') || '', url.searchParams.get('a') || '', url.searchParams.get('p') || ''), 200, cors);
+      const q = k => url.searchParams.get(k) || '';
+      if (url.pathname === '/wp') return json(await wpEvents(q('a'), q('g')), 200, cors);
+      if (url.pathname === '/wpg') return json(await wpGenres(q('a')), 200, cors);
+      if (url.pathname === '/venue') return json(await venue(q('c'), q('n'), q('a'), q('p'), url.searchParams.has('x') ? q('x') : '1'), 200, cors);
       return json(await events(), 200, cors);
     } catch (e) {
       return json({ error: String(e && e.message || e) }, 502, cors);
@@ -140,7 +145,8 @@ async function allowed(origin, path) {
 // ---------- ウォーカープラス ----------
 // 一覧：/event_list/地域/eg0115/ （eg0115＝フリーマーケット）。イベントは /event/arNNNNeNNNNNN/ へのリンク
 // 1件ごとの区切り（次のイベントのリンクまで）の文字から、日付「2026年11月15日(日)」（～ 終わりの日）と場所を取り出す
-function parseWp(html, pref, out) {
+function parseWp(html, pref, out, g) {
+  g = g || 'eg0115';
   const re = /href="(?:https?:\/\/www\.walkerplus\.com)?\/event\/(ar\d{4}e\d+)\/"[^>]*>([\s\S]*?)<\/a>/gi;
   const hits = [];
   let m;
@@ -161,10 +167,11 @@ function parseWp(html, pref, out) {
     // 場所：日付のあとの「〇〇市」「〇〇区」などで始まる言葉（なければ空。詳しいページで調べる）
     const after = o.chunk.slice(o.chunk.indexOf(dm[0]) + dm[0].length);
     const lm = /([^\s　、。]{1,10}?(?:市|区|町|村)[^\s　、。]{0,20})/.exec(after);
-    out.set('wp-' + id, { id: 'wp-' + id, d, d2: d2 > d ? d2 : '', vc: 'wp-' + id, n: o.name || '（名前なし）', url: `${WP}/event/${id}/`, src: 'wp', st: CANCEL.test(o.chunk) ? '中止' : '', pn: pref, loc: lm ? lm[1] : '' });
+    out.set('wp-' + id, { id: 'wp-' + id, d, d2: d2 > d ? d2 : '', vc: 'wp-' + id, n: o.name || '（名前なし）', url: `${WP}/event/${id}/`, src: 'wp', st: CANCEL.test(o.chunk) ? '中止' : '', pn: pref, loc: lm ? lm[1] : '', eg: g });
   }
   // 次のページ（/event_list/地域/eg0115/2.html など）
-  return [...new Set([...html.matchAll(/href="((?:https?:\/\/www\.walkerplus\.com)?\/event_list\/ar\d+\/eg0115\/\d+\.html)"/gi)].map(x => x[1].replace(/^https?:\/\/www\.walkerplus\.com/, '')))];
+  const pg = new RegExp(`href="((?:https?:\\/\\/www\\.walkerplus\\.com)?\\/event_list\\/ar\\d+\\/${g}\\/\\d+\\.html)"`, 'gi');
+  return [...new Set([...html.matchAll(pg)].map(x => x[1].replace(/^https?:\/\/www\.walkerplus\.com/, '')))];
 }
 
 async function events() {
@@ -184,20 +191,40 @@ async function events() {
 }
 
 // ウォーカープラスは都県ごとに頼んでもらう（1回の仕事を小さくするため。無料の Cloudflare は1回あたりの計算時間が短い）
-async function wpEvents(ar) {
+async function wpEvents(ar, g) {
   const area = WP_AREAS.find(a => a[0] === ar);
   if (!area) throw new Error('地域の番号がちがいます');
+  g = g || 'eg0115';
+  if (!/^eg\d{4}$/.test(g)) throw new Error('ジャンルの番号がちがいます');
   const [, pref] = area, out = new Map(), err = [];
-  const first = `/event_list/${ar}/eg0115/`;
-  if (!(await allowed(WP, first))) return { v: 2, ar, ev: [], err: [`robots.txt で止められています（${first}）`] };
+  const first = `/event_list/${ar}/${g}/`;
+  if (!(await allowed(WP, first))) return { v: 2, ar, g, ev: [], err: [`robots.txt で止められています（${first}）`] };
   try {
-    const more = parseWp(await get(WP + first, 43200), pref, out);
-    for (const pth of more.filter(x => x !== first).slice(0, 3)) {
-      if (await allowed(WP, pth)) parseWp(await get(WP + pth, 43200), pref, out);
+    const more = parseWp(await get(WP + first, 43200), pref, out, g);
+    // 次のページ：フリマは3枚まで、ほかのジャンルは1枚まで（近い日から並んでいるので、先のほうは次の日に読む）
+    for (const pth of more.filter(x => x !== first).slice(0, g === 'eg0115' ? 3 : 1)) {
+      if (await allowed(WP, pth)) parseWp(await get(WP + pth, 43200), pref, out, g);
     }
   } catch (e) { err.push(String(e.message || e)); }
   const today = jstNow().toISOString().slice(0, 10);
-  return { v: 2, ar, t: Date.now(), ev: [...out.values()].filter(e => (e.d2 || e.d) >= today), err };
+  return { v: 2, ar, g, t: Date.now(), ev: [...out.values()].filter(e => (e.d2 || e.d) >= today), err };
+}
+
+// ジャンルの一覧：その地域のイベント一覧のページにある /event_list/地域/egNNNN/ へのリンク
+async function wpGenres(ar) {
+  ar = ar || 'ar0313';
+  if (!WP_AREAS.some(a => a[0] === ar)) throw new Error('地域の番号がちがいます');
+  const path = `/event_list/${ar}/`;
+  if (!(await allowed(WP, path))) return { v: 2, ar, list: [], err: ['robots.txt で止められています'] };
+  const html = await get(WP + path, 604800);
+  const re = new RegExp(`href="(?:https?:\\/\\/www\\.walkerplus\\.com)?\\/event_list\\/${ar}\\/(eg\\d{4})\\/"[^>]*>([\\s\\S]*?)<\\/a>`, 'gi');
+  const seen = new Map();
+  let m;
+  while ((m = re.exec(html))) {
+    const name = strip(m[2]).replace(/[（(]\d+[）)]$/, '').replace(/\d+件$/, '').trim();
+    if (name && !seen.has(m[1])) seen.set(m[1], name);
+  }
+  return { v: 2, ar, list: [...seen].map(([g, n]) => ({ g, n })), err: [] };
 }
 
 // ---------- 会場の住所と位置 ----------
@@ -228,8 +255,8 @@ function placeName(n) {
 }
 
 // 会場の住所と位置：会場のページの住所 → 国土地理院の住所検索。だめなら会場名で OpenStreetMap
-async function venue(c, hint, loc, pref) {
-  if (/^wp-ar\d{4}e\d+$/.test(c)) return wpVenue(c, hint, loc, pref);
+async function venue(c, hint, loc, pref, detail) {
+  if (/^wp-ar\d{4}e\d+$/.test(c)) return wpVenue(c, hint, loc, pref, detail !== '0');
   let page, name = '';
   if (/^rc-\d{2,3}$/.test(c)) page = `${RC}hall_detail.php?eventkbncode=${c.slice(3)}`;
   else if (/^fs-[\w-]+$/.test(c)) page = `${FS}kaijouannai/${c.slice(3)}.htm`;
@@ -256,9 +283,14 @@ async function venue(c, hint, loc, pref) {
   return { c, n: name, addr, x: p ? p[0] : null, y: p ? p[1] : null, url: page, why };
 }
 // ウォーカープラスのイベントの場所：一覧の場所（市区町村など）→ 足りなければイベントのページの「場所」「住所」
-async function wpVenue(c, hint, loc, pref) {
+async function wpVenue(c, hint, loc, pref, detail) {
   const id = c.slice(3), path = `/event/${id}/`, why = [];
   let addr = loc || '', place = '';
+  if (!detail && loc) {
+    // 詳しく調べなくてよいとき：一覧の場所（市区町村）のおおよその位置
+    const p = await gsi((pref && !loc.startsWith(pref) ? pref : '') + loc);
+    if (p) return { c, n: hint || '', addr: loc, x: p[0], y: p[1], url: WP + path, why: ['市区町村の場所です（会場の場所ではありません）'], rough: 1 };
+  }
   if (await allowed(WP, path)) {
     try {
       const text = strip(await get(WP + path, 2592000));
