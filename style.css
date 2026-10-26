@@ -300,3 +300,5 @@ a { color: var(--c); }
 .evBox li:first-child { border-top: 0; }
 .evBox li small { margin-left: 6px; color: var(--sub); font-size: 11px; }
 @media (prefers-color-scheme: dark) { .crowd, .crowdL { background: #4a2523; color: #f4b0a8; } .evBox.crowdBox { background: #2f2023; border-color: #6a3a36; } }
+/* 版16：MichiMiru アプリの中で開いているときの「🚶」（MichiMiru に戻る） */
+#mapBtns #mMichi { background: #1e7e34; color: #fff; }
