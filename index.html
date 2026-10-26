@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>MeguMiru（メグミル）</title>
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
-<link href="style.css?v=14" rel="stylesheet">
+<link href="style.css?v=15" rel="stylesheet">
 </head>
 <body>
 
@@ -52,6 +52,7 @@
     <span id="monthLabel"></span>
     <button class="btn sm" id="monNext" type="button">次の月 ▶</button>
   </div>
+  <div id="todayEv"></div>
   <div id="todaySum" class="card"></div>
   <div id="todayList"></div>
 </section>
@@ -74,7 +75,7 @@
 
 <section class="panel" id="p-plan" hidden>
   <h2>📅 おでかけ計画</h2>
-  <div class="segBtn"><button id="pvPins" type="button">🚩 行き先ピン</button><button id="pvFlea" type="button">🛍 フリマ</button></div>
+  <div class="segBtn"><button id="pvPins" type="button">🚩 行き先ピン</button><button id="pvFlea" type="button">🎪 催し</button></div>
   <p class="note" id="planHint">地図を長押しする（パソコンは右クリック）と、行き先ピンを立てられます。</p>
   <div id="planList"></div>
 </section>
@@ -87,13 +88,13 @@
     <label class="sw"><span>近くのまだ行っていない場所を知らせる<small>歩いているとき、400m以内のミュージアム・史跡・道の駅（駅は知らせません）</small></span><input type="checkbox" id="setNear"></label>
     <label class="sw"><span>場所の一言説明<small>詳しい画面と「今日」のはじめての場所に、Wikipedia の説明を1〜2文出します。場所の名前だけを Wikipedia に送ります（位置や記録は送りません）</small></span><input type="checkbox" id="setWiki"></label>
   </div>
-  <h3>フリマ（Cloudflare の取り次ぎ役）</h3>
+  <h3>催し（Cloudflare の取り次ぎ役）</h3>
   <div class="card">
     <label class="fld">取り次ぎ役のアドレス<input id="setFleaUrl" type="url" placeholder="https://megu-flea.〇〇.workers.dev" autocomplete="off"></label>
     <label class="fld">合言葉<input id="setFleaKey" type="password" autocomplete="off"></label>
     <div class="btnRow"><button class="btn primary" id="btnFleaSave" type="button">入れてつなぐ</button></div>
     <p id="fleaStatus" class="note"></p>
-    <p class="note">アドレスと合言葉は、このスマホの中だけに置きます。予定はリサイクル運動市民の会の案内から、12時間に1回まで受け取ります。</p>
+    <p class="note">アドレスと合言葉は、このスマホの中だけに置きます。予定はリサイクル運動市民の会とウォーカープラスの案内から、12時間に1回まで受け取ります。</p>
   </div>
   <h3>MichiMiru の記録</h3>
   <div class="card">
@@ -136,7 +137,7 @@
   <div class="credit">
     <p>地図：© Mapbox © OpenStreetMap contributors</p>
     <p>駅・道の駅・ミュージアム・史跡・路線・線路の形：© OpenStreetMap contributors（ODbL）</p>
-    <p>フリマの予定：リサイクル運動市民の会（本部・埼玉本部）の案内による。位置：国土地理院の住所検索</p>
+    <p>催しの予定：リサイクル運動市民の会（本部・埼玉本部）・ウォーカープラスの案内による（私的利用）。位置：国土地理院の住所検索・OpenStreetMap（Nominatim）</p>
     <p>一言説明・名城の位置の一部：Wikipedia（CC BY-SA 4.0）。名城は公益財団法人日本城郭協会の「日本100名城」「続日本100名城」の一覧によります</p>
     <p>市区町村の境界：「国土数値情報（行政区域データ）」（国土交通省）をスマートニュース メディア研究所が簡素化したものを加工して作成（2021年1月時点）</p>
     <p id="verLine"></p>
@@ -173,19 +174,19 @@
 
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
 <script src="config.js"></script>
-<script src="js/base.js?v=14"></script>
+<script src="js/base.js?v=15"></script>
 <script src="js/data.js?v=11"></script>
 <script src="js/rec.js?v=12"></script>
-<script src="js/map.js?v=13"></script>
+<script src="js/map.js?v=15"></script>
 <script src="js/zukan.js?v=12"></script>
 <script src="js/gpx.js?v=7"></script>
 <script src="js/michi.js?v=11"></script>
 <script src="js/near.js?v=11"></script>
 <script src="js/wiki.js?v=10"></script>
 <script src="js/plan.js?v=13"></script>
-<script src="js/flea.js?v=13.3"></script>
-<script src="js/ui.js?v=14"></script>
+<script src="js/flea.js?v=15"></script>
+<script src="js/ui.js?v=15"></script>
 <script src="js/help.js?v=1"></script>
-<script src="js/main.js?v=14"></script>
+<script src="js/main.js?v=15"></script>
 </body>
 </html>

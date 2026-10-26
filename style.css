@@ -287,3 +287,16 @@ a { color: var(--c); }
 
 /* 版14 */
 .btn[hidden] { display: none; }
+
+/* 版15：催し */
+.gIc { margin-right: 4px; }
+.crowd { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; background: #fde7e3; color: #a3302a; font-size: 11px; font-weight: 600; vertical-align: 1px; }
+.crowdL { background: #fde7e3; color: #a3302a; border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+.evBox { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; margin-bottom: 10px; }
+.evBox.crowdBox { border-color: #e9a29a; background: #fff6f4; }
+.evT { margin: 0 0 4px; font-weight: 600; font-size: 14px; }
+.evBox ul { list-style: none; margin: 0; padding: 0; }
+.evBox li { padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; cursor: pointer; }
+.evBox li:first-child { border-top: 0; }
+.evBox li small { margin-left: 6px; color: var(--sub); font-size: 11px; }
+@media (prefers-color-scheme: dark) { .crowd, .crowdL { background: #4a2523; color: #f4b0a8; } .evBox.crowdBox { background: #2f2023; border-color: #6a3a36; } }
