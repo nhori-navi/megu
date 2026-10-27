@@ -1,4 +1,4 @@
-// main.js：起動（MeguMiru 版14：ホーム画面のアプリ。版16：MichiMiru アプリの中で開く。版17：MichiMiru 版23 の戻る帯）
+// main.js：起動（MeguMiru 版14：ホーム画面のアプリ。版16：MichiMiru アプリの中で開く。版17：MichiMiru 版23 の戻る帯。版18：控えの読み込み）
 async function boot() {
   wireUi();
   // 版16：MichiMiru アプリの中では、地図の右のボタンのいちばん上に「🚶」（MichiMiru に戻る）
@@ -19,6 +19,7 @@ async function boot() {
   await loadRec();
   await restorePrefs();
   await loadPlans();                 // 版12：行き先ピン
+  await meguPending();               // 版18：MichiMiru の「4つのアプリの控え」から読み込んだ分
   await loadFleaCache();             // 版13：フリマ
   // 路線（途切れた間の駅の推定・乗った区間に使う）と線路の形。待たずに裏で
   loadLines().then(() => { if (curTab === 'zukan') renderZukan(); }).then(loadRails).then(() => refreshRides());

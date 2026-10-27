@@ -1,4 +1,4 @@
-// rec.js：位置の記録と「訪れた」の判定（MeguMiru 版11：道の駅・ミュージアム・史跡も「通過」、乗った区間。版17：アプリの中では MichiMiru の位置をもらう）
+// rec.js：位置の記録と「訪れた」の判定（MeguMiru 版11：道の駅・ミュージアム・史跡も「通過」、乗った区間。版17：アプリの中では MichiMiru の位置をもらう。版18：MichiMiru の控えから読み込む）
 // 版7：地下の駅は判定をゆるめる（A）／位置が途切れた間に通った駅を路線から推定する（B）／「いまここ」で記録（C）／GPX の読み込みにも使う
 
 let REC = {};      // 場所の番号 → {lv, f, l, n, d, ds, s, e, h}
@@ -320,6 +320,24 @@ function deleteRec(id) {
   onRecChanged(id, 'del');
   return true;
 }
+
+// ---------- 版18：MichiMiru の「4つのアプリの控え」から読み込んだ分 ----------
+// MichiMiru（版24〜）が控えを読み込むと、MeguMiru の分を入れ物 megu／kv の 'pending_import' に置く。
+// MeguMiru は開いたとき（と、MichiMiru から頼まれたとき）に、いつもの読み込み（足し合わせ）で入れて消す
+async function meguPending() {
+  let p = null;
+  try { p = await DB.get('pending_import'); } catch (e) { return 0; }
+  if (!p) return 0;
+  let add = 0;
+  try {
+    add = mergeBackup(p);
+    if (typeof afterRecChanged === 'function') afterRecChanged();
+    toast(`MichiMiru の控えから読み込みました（新しく ${add}か所）`, 4500);
+  } catch (e) { toast('控えを読み込めませんでした：' + jaErr(e), 4500); }
+  try { await DB.set('pending_import', null); } catch (e) { /* なし */ }
+  return add;
+}
+window.meguPending = meguPending;
 
 // ---------- バックアップ ----------
 function backupData() {
