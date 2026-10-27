@@ -1,4 +1,4 @@
-// near.js：近づいたら知らせる（MeguMiru 版9）
+// near.js：近づいたら知らせる（MeguMiru 版9。版19：MichiMiru アプリの中で見えていないときは MichiMiru の通知に任せる）
 // 歩く速さ（自転車くらいまで）で動いているとき、400m以内のまだ行っていないミュージアム・史跡・道の駅を、地図の下の帯で知らせる
 // 駅は数が多くてうるさいので知らせない。同じ場所は12時間に1回まで
 
@@ -17,6 +17,8 @@ function bearing8(x1, y1, x2, y2) {
 
 function nearCheck(fix) {
   if (!nearOn || !recOn || !fix || fix.acc > RULE.nearAcc) return;
+  // 版19：MichiMiru アプリ（版27〜）の中で、MeguMiru が見えていないときは MichiMiru がスマホの通知で知らせる（ここでは知らせず、「知らせた」の印も付けない）
+  try { if (IN_MICHI && typeof window.parent.miruOvCur === 'function' && window.parent.miruOvCur() !== 'megu') return; } catch (e) { /* 古い MichiMiru */ }
   if (fix.spd != null && fix.spd > RULE.nearSpd) return;          // 乗り物では知らせない
   const now = Date.now();
   const cands = spotsNear(fix.x, fix.y, RULE.nearR)
