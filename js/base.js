@@ -1,5 +1,5 @@
-// base.js：共通の定数と道具（MeguMiru 版16）
-const APP_VER = 16;
+// base.js：共通の定数と道具（MeguMiru 版17）
+const APP_VER = 17;
 // 版16：MichiMiru の Android アプリ版の中で、MichiMiru の上に重ねて開いているとき（同じアドレスなので親の関数を呼べる）
 const IN_MICHI = (() => { try { return window.parent !== window && typeof window.parent.meguClose === 'function'; } catch (e) { return false; } })();
 

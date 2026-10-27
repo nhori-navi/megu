@@ -1,8 +1,9 @@
-// main.js：起動（MeguMiru 版14：ホーム画面のアプリ。版16：MichiMiru アプリの中で開く）
+// main.js：起動（MeguMiru 版14：ホーム画面のアプリ。版16：MichiMiru アプリの中で開く。版17：MichiMiru 版23 の戻る帯）
 async function boot() {
   wireUi();
   // 版16：MichiMiru アプリの中では、地図の右のボタンのいちばん上に「🚶」（MichiMiru に戻る）
-  if (IN_MICHI && $('mapBtns')) {
+  // 版17：MichiMiru 版23 からは MichiMiru が画面の上に「戻る帯」を出すので、🚶 は古い MichiMiru のときだけ
+  if (IN_MICHI && $('mapBtns') && !window.parent.miruStrip) {
     const b = document.createElement('button');
     b.id = 'mMichi'; b.type = 'button'; b.title = 'MichiMiru に戻る'; b.textContent = '🚶';
     b.onclick = () => { try { window.parent.meguClose(); } catch (e) { /* なし */ } };
@@ -73,7 +74,7 @@ window.addEventListener('appinstalled', () => { installEv = null; toast('ホー�
 function renderPwa() {
   const st = $('pwaStatus'), b = $('btnInstall');
   if (!st) return;
-  st.textContent = IN_MICHI ? '📱 MichiMiru アプリの中で開いています（地図の「🚶」で MichiMiru に戻ります）'
+  st.textContent = IN_MICHI ? (window.parent.miruStrip ? '📱 MichiMiru アプリの中で開いています（画面の上の緑の帯で MichiMiru に戻ります。位置は MichiMiru が受け取ったものを使います）' : '📱 MichiMiru アプリの中で開いています（地図の「🚶」で MichiMiru に戻ります）')
     : isStandalone() ? '📱 ホーム画面のアプリとして開いています' : installEv ? 'このスマホのホーム画面に置けます' : 'Chrome で開いています';
   b.hidden = IN_MICHI || !installEv || isStandalone();
   b.onclick = async () => { if (!installEv) return; installEv.prompt(); try { await installEv.userChoice; } catch (e) { /* なし */ } installEv = null; renderPwa(); };

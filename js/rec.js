@@ -1,4 +1,4 @@
-// rec.js：位置の記録と「訪れた」の判定（MeguMiru 版11：道の駅・ミュージアム・史跡も「通過」、乗った区間）
+// rec.js：位置の記録と「訪れた」の判定（MeguMiru 版11：道の駅・ミュージアム・史跡も「通過」、乗った区間。版17：アプリの中では MichiMiru の位置をもらう）
 // 版7：地下の駅は判定をゆるめる（A）／位置が途切れた間に通った駅を路線から推定する（B）／「いまここ」で記録（C）／GPX の読み込みにも使う
 
 let REC = {};      // 場所の番号 → {lv, f, l, n, d, ds, s, e, h}
@@ -267,8 +267,11 @@ function onPosErr(e) {
 }
 
 function startWatch() {
-  if (!('geolocation' in navigator)) { toast('この端末では位置情報が使えません'); return; }
   if (watchId != null) return;
+  // 版17：MichiMiru アプリ（版23〜）の中では、自分で GPS を見張らず、MichiMiru が受け取った位置をもらう。
+  // GPS を二重に使わないので電池が減りにくく、MichiMiru が画面を消している間に受け取った位置も届く
+  if (IN_MICHI) { try { if (typeof window.parent.miruPosOn === 'function') { window.parent.miruPosOn(onPos); watchId = 'michi'; return; } } catch (e) { /* 古い MichiMiru */ } }
+  if (!('geolocation' in navigator)) { toast('この端末では位置情報が使えません'); return; }
   watchId = navigator.geolocation.watchPosition(onPos, onPosErr, { enableHighAccuracy: true, maximumAge: 2000, timeout: 30000 });
 }
 
