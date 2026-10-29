@@ -196,7 +196,7 @@ function fleaStar(id) {
 // ---------- 計画タブの「催し」 ----------
 function renderFlea(box) {
   if (!fleaReady()) {
-    box.innerHTML = '<div class="card"><p class="big">催しの予定を受け取る準備がまだです</p><p class="note">設定の「催し」に、Cloudflare に置いた取り次ぎ役のアドレスと合言葉を入れてください。</p><div class="btnRow"><button class="btn primary" id="flGoSet">設定を開く</button></div></div>';
+    box.innerHTML = '<div class="card"><p class="big">催しの予定を受け取る準備がまだです</p><p class="note">設定の「🎪 催しの予定を受け取る」に、取り次ぎ役のアドレスと合言葉を入れてください。</p><div class="btnRow"><button class="btn primary" id="flGoSet">設定を開く</button></div></div>';
     $('flGoSet').onclick = () => showTab('set');
     return;
   }
@@ -283,18 +283,28 @@ function renderFleaSettings() {
   if (!$('setFleaUrl')) return;
   $('setFleaUrl').value = fleaUrl;
   $('setFleaKey').value = fleaKey;
-  $('fleaStatus').textContent = !fleaReady() ? 'まだ入っていません' : fleaBusy ? '受け取っています…' : fleaErr ? fleaErr
-    : FLEA ? `つながっています（${FLEA.ev.length}件・${fmtDate(FLEA.ft)} ${fmtTime(FLEA.ft)}）` : '入っています';
+  const ok = fleaReady() && !fleaErr && !!FLEA;
+  $('fleaStatus').textContent = !fleaReady() ? 'つなぎ先がまだ入っていません。下の欄に取り次ぎ役のアドレスと合言葉を入れてください' : fleaBusy ? '受け取っています…' : fleaErr ? '⚠️ ' + fleaErr
+    : FLEA ? `✅ 催しの予定を受け取っています（${FLEA.ev.length}件・${fmtDate(FLEA.ft)} ${fmtTime(FLEA.ft)}）` : 'つなぎ先は入っています';
+  $('fleaStatus').classList.toggle('ok', ok);
+  // 版21：つながっていれば入れる欄はたたむ（自分で開いたら開いたまま）。まだ・つながらないときは開く
+  const cfg = $('fleaCfg');
+  if (cfg) { if (!fleaReady() || fleaErr) cfg.open = true; else if (!cfg.dataset.init) cfg.open = false; cfg.dataset.init = '1'; }
+  if ($('fleaNowRow')) $('fleaNowRow').hidden = !fleaReady() || fleaBusy;
 }
 function wireFleaSettings() {
   if (!$('btnFleaSave')) return;
+  if ($('btnFleaNow')) $('btnFleaNow').onclick = async () => {   // 版21
+    fleaErr = ''; renderFleaSettings();
+    await fleaFetch(true); renderFleaSettings(); toast(fleaErr ? fleaErr : '催しの予定を受け取りました');
+  };
   $('btnFleaSave').onclick = async () => {
     const u = $('setFleaUrl').value.trim(), k = $('setFleaKey').value.trim();
     if (u && !/^https:\/\/[^/\s]+/.test(u)) { toast('アドレスは https:// で始まるものを入れてください'); return; }
     fleaUrl = u; fleaKey = k; setLS('fleaurl', u); setLS('fleakey', k);
     FLEA = null; fleaErr = '';
     renderFleaSettings();
-    if (fleaReady()) { await fleaFetch(true); renderFleaSettings(); toast(fleaErr ? fleaErr : '催しの予定を受け取りました'); }
+    if (fleaReady()) { await fleaFetch(true); if (!fleaErr && FLEA && $('fleaCfg')) $('fleaCfg').open = false; renderFleaSettings(); toast(fleaErr ? fleaErr : '催しの予定を受け取りました'); }
   };
 }
 
