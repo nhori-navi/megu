@@ -10,7 +10,9 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>MeguMiru（メグミル）</title>
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
-<link href="style.css?v=16" rel="stylesheet">
+<link href="style.css?v=20" rel="stylesheet">
+<script>/* 版20：MichiMiru アプリの中では、描き始める前に MichiMiru の画面の明るさに合わせる（白く光らないように） */
+try { var P = window.parent; if (P !== window && typeof P.miruTheme === 'function') document.documentElement.classList.add(P.miruTheme().dark ? 'dark' : 'light'); } catch (e) {}</script>
 </head>
 <body>
 
@@ -174,10 +176,10 @@
 
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
 <script src="config.js"></script>
-<script src="js/base.js?v=19"></script>
+<script src="js/base.js?v=20"></script>
 <script src="js/data.js?v=11"></script>
 <script src="js/rec.js?v=18"></script>
-<script src="js/map.js?v=15"></script>
+<script src="js/map.js?v=20"></script>
 <script src="js/zukan.js?v=12"></script>
 <script src="js/gpx.js?v=7"></script>
 <script src="js/michi.js?v=16"></script>
