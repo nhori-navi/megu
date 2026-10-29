@@ -94,6 +94,23 @@ a { color: var(--c); }
 .sw + .sw { border-top: 1px solid var(--line); }
 .sw small { display: block; color: var(--sub); font-size: 12px; margin-top: 2px; }
 .sw input { width: 22px; height: 22px; accent-color: var(--c); }
+/* 版21：入切は MichiMiru と同じ横長のスイッチ（入はくすんだ紫） */
+.sw input[type=checkbox] { appearance: none; -webkit-appearance: none; flex: 0 0 52px; width: 52px; height: 30px; margin: 0; border-radius: 15px; background: #c9c2cf; position: relative; transition: background .15s; cursor: pointer; }
+.sw input[type=checkbox]::before { content: ''; position: absolute; left: 3px; top: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); transition: left .15s; }
+.sw input[type=checkbox]:checked { background: var(--c); }
+.sw input[type=checkbox]:checked::before { left: 25px; }
+.sw input[type=checkbox]:disabled { opacity: .45; }
+@media (prefers-color-scheme: dark) { :root:not(.light) .sw input[type=checkbox] { background: #4a4152; } }
+:root.dark .sw input[type=checkbox] { background: #4a4152; }
+:root .sw input[type=checkbox]:checked { background: var(--c); }
+/* 版21：催しのつなぎ先（つながったらたたむ） */
+#fleaCfg { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 6px; }
+#fleaCfg > summary { cursor: pointer; color: var(--c); font-size: 14px; padding: 4px 0; list-style: none; }
+#fleaCfg > summary::-webkit-details-marker { display: none; }
+#fleaCfg > summary::before { content: '▸ '; }
+#fleaCfg[open] > summary::before { content: '▾ '; }
+#fleaStatus.ok { color: var(--ink); font-weight: bold; font-size: 15px; }
+#fleaNowRow[hidden] { display: none; }
 .credit { margin-top: 24px; color: var(--sub); font-size: 11.5px; line-height: 1.6; }
 .credit p { margin: 2px 0; }
 
