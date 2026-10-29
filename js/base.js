@@ -1,7 +1,27 @@
-// base.js：共通の定数と道具（MeguMiru 版19）
-const APP_VER = 19;
+// base.js：共通の定数と道具（MeguMiru 版20）
+const APP_VER = 20;
 // 版16：MichiMiru の Android アプリ版の中で、MichiMiru の上に重ねて開いているとき（同じアドレスなので親の関数を呼べる）
 const IN_MICHI = (() => { try { return window.parent !== window && typeof window.parent.meguClose === 'function'; } catch (e) { return false; } })();
+
+// 版20：画面の明るさ。MichiMiru アプリの中では MichiMiru に合わせる（MichiMiru 版37 が miruThemeSet で知らせる）。Chrome ではスマホの設定のまま
+// THEME = {dark, preset（地図の明るさ day／dawn／dusk／night）, phone（スマホの設定に従っているとき true）}
+let THEME = null;
+function themeNow() {
+  try { const P = window.parent; if (P !== window && typeof P.miruTheme === 'function') return P.miruTheme(); } catch (e) {}
+  const d = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+  return {dark: d, preset: d ? 'dusk' : 'day', phone: true};
+}
+function themeApply(t) {
+  THEME = t || themeNow();
+  const r = document.documentElement, fromMichi = !THEME.phone;
+  r.classList.toggle('dark', fromMichi && !!THEME.dark);
+  r.classList.toggle('light', fromMichi && !THEME.dark);
+  const tc = document.querySelector('meta[name=theme-color]'); if (tc) tc.setAttribute('content', THEME.dark ? '#221d27' : '#7a5c8e');
+  if (typeof mapPreset === 'function') mapPreset();
+}
+window.miruThemeSet = t => themeApply(t);
+themeApply();
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (THEME && THEME.phone) themeApply(); }); } catch (e) {}
 
 // 5つの棚
 const SHELVES = {

@@ -145,13 +145,18 @@ function initMap() {
     config: { basemap: { showPointOfInterestLabels: false } },
     attributionControl: true
   });
-  map.on('style.load', setupLayers);
+  map.on('style.load', () => { setupLayers(); mapPreset(); });
   map.on('moveend', viewChanged);
   map.on('dragstart', () => setFollow(false));
   map.on('click', onMapClick);
   wireLongPress();
 }
 
+// 版20：地図の明るさ（MichiMiru の「夜の地図」、Chrome ではスマホが暗い画面のとき夕方くらい）
+function mapPreset() {
+  if (typeof map === 'undefined' || !map || !THEME) return;
+  try { map.setConfigProperty('basemap', 'lightPreset', THEME.preset || 'day'); } catch (e) {}
+}
 function setupLayers() {
   if (map.getSource('city')) return;
   map.addSource('city', { type: 'geojson', data: cityGeo() });
