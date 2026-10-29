@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>MeguMiru（メグミル）</title>
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
-<link href="style.css?v=20" rel="stylesheet">
+<link href="style.css?v=21" rel="stylesheet">
 <script>/* 版20：MichiMiru アプリの中では、描き始める前に MichiMiru の画面の明るさに合わせる（白く光らないように） */
 try { var P = window.parent; if (P !== window && typeof P.miruTheme === 'function') document.documentElement.classList.add(P.miruTheme().dark ? 'dark' : 'light'); } catch (e) {}</script>
 </head>
@@ -90,13 +90,16 @@ try { var P = window.parent; if (P !== window && typeof P.miruTheme === 'functio
     <label class="sw"><span>近くのまだ行っていない場所を知らせる<small>歩いているとき、400m以内のミュージアム・史跡・道の駅（駅は知らせません）</small></span><input type="checkbox" id="setNear"></label>
     <label class="sw"><span>場所の一言説明<small>詳しい画面と「今日」のはじめての場所に、Wikipedia の説明を1〜2文出します。場所の名前だけを Wikipedia に送ります（位置や記録は送りません）</small></span><input type="checkbox" id="setWiki"></label>
   </div>
-  <h3>催し（Cloudflare の取り次ぎ役）</h3>
+  <h3>🎪 催しの予定を受け取る</h3>
   <div class="card">
+    <p id="fleaStatus" class="note"></p>
+    <div class="btnRow" id="fleaNowRow" hidden><button class="btn" id="btnFleaNow" type="button">今すぐ受け取る</button></div>
+    <details id="fleaCfg"><summary>つなぎ先を変える（取り次ぎ役のアドレス・合言葉）</summary>
     <label class="fld">取り次ぎ役のアドレス<input id="setFleaUrl" type="url" placeholder="https://megu-flea.〇〇.workers.dev" autocomplete="off"></label>
     <label class="fld">合言葉<input id="setFleaKey" type="password" autocomplete="off"></label>
     <div class="btnRow"><button class="btn primary" id="btnFleaSave" type="button">入れてつなぐ</button></div>
-    <p id="fleaStatus" class="note"></p>
-    <p class="note">アドレスと合言葉は、このスマホの中だけに置きます。予定はリサイクル運動市民の会とウォーカープラスの案内から、12時間に1回まで受け取ります。</p>
+    <p class="note">アドレスと合言葉は、このスマホの中だけに置きます。予定はリサイクル運動市民の会とウォーカープラスの案内から、12時間に1回まで受け取ります（取り次ぎ役は Cloudflare に置いた、催しを集める小さなプログラムです）。</p>
+    </details>
   </div>
   <h3>MichiMiru の記録</h3>
   <div class="card">
@@ -176,7 +179,7 @@ try { var P = window.parent; if (P !== window && typeof P.miruTheme === 'functio
 
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
 <script src="config.js"></script>
-<script src="js/base.js?v=20"></script>
+<script src="js/base.js?v=21"></script>
 <script src="js/data.js?v=11"></script>
 <script src="js/rec.js?v=18"></script>
 <script src="js/map.js?v=20"></script>
@@ -186,7 +189,7 @@ try { var P = window.parent; if (P !== window && typeof P.miruTheme === 'functio
 <script src="js/near.js?v=19"></script>
 <script src="js/wiki.js?v=10"></script>
 <script src="js/plan.js?v=13"></script>
-<script src="js/flea.js?v=17"></script>
+<script src="js/flea.js?v=21"></script>
 <script src="js/ui.js?v=16"></script>
 <script src="js/help.js?v=1"></script>
 <script src="js/main.js?v=18"></script>
