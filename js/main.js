@@ -1,4 +1,4 @@
-// main.js：起動（MeguMiru 版14：ホーム画面のアプリ。版16：MichiMiru アプリの中で開く。版17：MichiMiru 版23 の戻る帯。版18：控えの読み込み）
+// main.js：起動（MeguMiru 版14：ホーム画面のアプリ。版16：MichiMiru アプリの中で開く。版17：MichiMiru 版23 の戻る帯。版18：控えの読み込み。版22：Web 版のミルトコの「TOP に戻る」）
 async function boot() {
   wireUi();
   // 版16：MichiMiru アプリの中では、地図の右のボタンのいちばん上に「🚶」（MichiMiru に戻る）
@@ -7,6 +7,15 @@ async function boot() {
     const b = document.createElement('button');
     b.id = 'mMichi'; b.type = 'button'; b.title = 'MichiMiru に戻る'; b.textContent = '🚶';
     b.onclick = () => { try { window.parent.meguClose(); } catch (e) { /* なし */ } };
+    $('mapBtns').prepend(b);
+  }
+  // 版22：ホーム画面から開いたシリーズの TOP（Web 版のミルトコ）から来たときは、地図の右のボタンのいちばん上に「TOP に戻る」（ミルトコのアイコン）
+  let tokoWeb = false; try { tokoWeb = !IN_MICHI && window.parent === window && sessionStorage.getItem('toko_web') === '1'; } catch (e) { /* なし */ }
+  if (tokoWeb && $('mapBtns')) {
+    const b = document.createElement('button');
+    b.id = 'mToko'; b.type = 'button'; b.title = 'ミルトコの TOP に戻る'; b.setAttribute('aria-label', 'ミルトコの TOP に戻る');
+    b.innerHTML = '<img src="../toko/img/icon.svg" alt="" style="width:28px;height:28px;border-radius:8px;display:block;margin:auto">';
+    b.onclick = () => { location.href = '../?home=1'; };
     $('mapBtns').prepend(b);
   }
   wireIntro();
